@@ -4,7 +4,6 @@ This project explores how quantum communication systems behave under realistic c
 
 A modular simulation platform for quantum communication systems, exploring teleportation fidelity, BB84 key distribution, and channel effects (loss and noise) within a unified, extensible framework.
 
-```markdown
 **Status:** Early-stage research prototype (actively evolving)
 
 ---
