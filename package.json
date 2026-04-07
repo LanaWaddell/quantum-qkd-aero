@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "express": "^5.2.1"
+  },
+  "name": "quantum-qkd-aero",
+  "version": "1.0.0",
+  "description": "A Python-based R&D sandbox for simulating satellite-to-ground Quantum Key Distribution (QKD) and Entanglement-based communication protocols.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

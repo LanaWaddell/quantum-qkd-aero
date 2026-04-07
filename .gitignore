@@ -1,0 +1,6 @@
+qkd_env/
+__pycache__/
+*.pyc
+outputs/
+node_modules/
+.DS_Store

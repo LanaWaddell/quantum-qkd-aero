@@ -1,0 +1,18 @@
+--- Aerospace Telemetry Noise Analysis Report ---
+Timestamp: 2026-02-11 22:38:01
+Description: Comparison between theoretical 'Clean' and simulated 'Noisy' data.
+Atmospheric Interference Model: 10% Bit-Flip error probability.
+
+Data Comparison (Shots: 1000):
+Full Synchronization ('00', '11'):
+  Clean: 1000 (100%)
+  Noisy: 831 (83.1%)
+
+Desynchronization Errors ('01', '10'):
+  Clean: 0 (0%)
+  Noisy: 169 (16.9%)
+
+Conclusion:
+  The interference model caused a 16.9% degradation in telemetry synchronization.
+  This represents a significant risk for synchronized satellite sensor systems.
+------------------------------------------------
