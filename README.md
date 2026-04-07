@@ -1,6 +1,11 @@
 # Quantum QKD Aero
 
+This project explores how quantum communication systems behave under realistic constraints, with a focus on understanding how noise, loss, and protocol design impact secure information exchange.
+
 A modular simulation platform for quantum communication systems, exploring teleportation fidelity, BB84 key distribution, and channel effects (loss and noise) within a unified, extensible framework.
+
+```markdown
+**Status:** Early-stage research prototype (actively evolving)
 
 ---
 
@@ -13,6 +18,8 @@ This project models key components of quantum communication systems:
 
 - **BB84 Quantum Key Distribution (QKD)**  
   Implements a minimal protocol with basis selection, sifting, and QBER calculation.
+
+  The BB84 implementation is intentionally simplified and classicalized to support rapid prototyping and system-level experimentation.
 
 - **Channel Model**  
   Shared abstraction for:
@@ -51,6 +58,14 @@ src/qkd/
   New protocols and channel effects can be added without restructuring
 
 ---
+## 🚀 Quick Start
+
+1. Clone the repository  
+2. Set up a Python environment  
+3. Run the simulation:
+
+```bash
+...
 
 ## ⚙️ Running the Simulation
 
