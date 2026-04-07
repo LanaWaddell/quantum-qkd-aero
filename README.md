@@ -63,12 +63,10 @@ src/qkd/
 2. Set up a Python environment  
 3. Run the simulation:
 
-```bash
 ...
 
 ## ⚙️ Running the Simulation
 
 Using the project virtual environment:
 
-```bash
 MPLBACKEND=Agg MPLCONFIGDIR=/tmp/matplotlib ./qkd_env/bin/python3 src/qkd/run.py
