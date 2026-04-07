@@ -69,4 +69,5 @@ src/qkd/
 
 Using the project virtual environment:
 
+```bash
 MPLBACKEND=Agg MPLCONFIGDIR=/tmp/matplotlib ./qkd_env/bin/python3 src/qkd/run.py
