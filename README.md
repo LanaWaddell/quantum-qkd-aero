@@ -1,73 +1,72 @@
-# Quantum QKD Aero
+# Mission Lana: Satellite QKD & Quantum Teleportation Simulator
 
-This project explores how quantum communication systems behave under realistic constraints, with a focus on understanding how noise, loss, and protocol design impact secure information exchange.
+Quantum-QKD-Aero is a Python-based R&D sandbox for satellite-to-ground QKD and teleportation experiments. The current implementation is a lightweight simulator plus a local dashboard; Phase 2 interface contracts are documented but not fully implemented yet.
 
-A modular simulation platform for quantum communication systems, exploring teleportation fidelity, BB84 key distribution, and channel effects (loss and noise) within a unified, extensible framework.
+## Implemented Now
 
-**Status:** Early-stage research prototype (actively evolving)
+- BB84 toy simulation with bit loss, bit flips, sifting, and QBER reporting.
+- Teleportation mission toy simulation that writes a fidelity/resource plot.
+- Local Express dashboard that reads simulator artifacts from `outputs/` with fallback to tracked root artifacts.
+- Phase 2A repository foundation: packaging metadata, interface contract docs, schema recognition, reserved module names, and pytest scaffolding.
 
----
+## Current Workflow
 
-## 🔬 Overview
-
-This project models key components of quantum communication systems:
-
-- **Quantum Teleportation**  
-  Simulates fidelity degradation and entanglement resource consumption under noise.
-
-- **BB84 Quantum Key Distribution (QKD)**  
-  Implements a minimal protocol with basis selection, sifting, and QBER calculation.
-
-  The BB84 implementation is intentionally simplified and classicalized to support rapid prototyping and system-level experimentation.
-
-- **Channel Model**  
-  Shared abstraction for:
-  - photon loss  
-  - bit-flip noise  
-  - fidelity degradation  
-
-The system is designed to evolve toward more realistic simulations, including atmospheric effects, adversarial models, and satellite-based communication scenarios.
-
----
-
-## 🧠 Architecture
-
-The project follows a modular structure:
-
-```
-src/qkd/
-├── teleportation.py   # Teleportation simulation
-├── bb84.py            # BB84 protocol simulation
-├── channel.py         # Shared channel (loss + noise)
-├── run.py             # Simulation entry point
-```
-
-### Core Design Principles
-
-- **Separation of concerns**  
-  Protocols, channel, and metrics are independent modules
-
-- **Shared environment model**  
-  All simulations use a unified channel abstraction
-
-- **Reproducibility**  
-  Deterministic runs via seeded randomness
-
-- **Extensibility**  
-  New protocols and channel effects can be added without restructuring
-
----
-## 🚀 Quick Start
-
-1. Clone the repository  
-2. Set up a Python environment  
-3. Run the simulation:
-
-...
-
-## ⚙️ Running the Simulation
-
-Using the project virtual environment:
+Run the simulator:
 
 ```bash
-MPLBACKEND=Agg MPLCONFIGDIR=/tmp/matplotlib ./qkd_env/bin/python3 src/qkd/run.py
+python src/qkd/run.py
+```
+
+The simulator writes:
+
+- `outputs/results.json`
+- `outputs/qkd_teleportation.png`
+
+Launch the dashboard:
+
+```bash
+npm start
+```
+
+Then open:
+
+```text
+http://localhost:8080
+```
+
+The dashboard prefers `outputs/results.json` and `outputs/qkd_teleportation.png`, then falls back to the tracked root `results.json` and `qkd_teleportation.png`.
+
+## Recreate The Python Environment
+
+The current working environment was captured in `requirements.txt`.
+
+```bash
+python3 -m venv qkd_env
+qkd_env/bin/python -m pip install -r requirements.txt
+qkd_env/bin/python src/qkd/run.py
+```
+
+For package-style development, install the project with the optional dev extra:
+
+```bash
+python -m pip install -e ".[dev]"
+pytest
+```
+
+Qiskit is optional and is not required for the default simulator:
+
+```bash
+python -m pip install -e ".[qiskit]"
+```
+
+## Active Code vs Archive
+
+Active code lives in `src/qkd/`, with the dashboard in `dashboard.js` and Phase 2A tests in `tests/`.
+
+`01-Gate-Noise-Archive/` is preserved archival research material. It may contain Qiskit porting candidates for future optional validation paths, including Bell-state preparation, noise-model, and measurement-count routines. Archive files are not part of the active default workflow.
+
+Root PNGs and root `results.json` are tracked fallback/demo artifacts. Fresh simulator output is written under `outputs/`.
+
+## Planned
+
+`docs/INTERFACES.md` is the canonical implementation contract for Phase 2. Phase 2B is planned to add calibrated physics modules for channel state, decoy analysis, Eve strategies, teleportation fidelity, and CHSH while keeping Qiskit optional. Those Phase 2B physics features are not implemented yet.

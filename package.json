@@ -7,7 +7,8 @@
   "description": "A Python-based R&D sandbox for simulating satellite-to-ground Quantum Key Distribution (QKD) and Entanglement-based communication protocols.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node dashboard.js",
+    "test": "pytest"
   },
   "keywords": [],
   "author": "",
