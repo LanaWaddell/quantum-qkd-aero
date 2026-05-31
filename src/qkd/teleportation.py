@@ -1,7 +1,62 @@
 import math
 import statistics
+from dataclasses import dataclass
+
+import numpy as np
 
 from qkd.channel import fidelity_noise
+
+
+@dataclass
+class TeleportationResult:
+    fidelity: float
+    singlet_fraction: float
+    classical_bound: float
+    beats_classical: bool
+    margin: float
+    method: str
+
+
+def teleportation_fidelity(werner_p: float, *, method: str = "analytic") -> TeleportationResult:
+    if not 0.0 <= werner_p <= 1.0:
+        raise ValueError("werner_p must be in [0, 1].")
+
+    classical_bound = 2 / 3
+
+    if method == "analytic":
+        fidelity = (1 + werner_p) / 2
+        singlet_fraction = (1 + 3 * werner_p) / 4
+    elif method == "numeric":
+        rho = _werner_state(werner_p)
+        bell_projector = _phi_plus_projector()
+        singlet_fraction = float(np.real(np.trace(rho @ bell_projector)))
+        fidelity = float((2 * singlet_fraction + 1) / 3)
+    else:
+        raise ValueError(f"Unknown teleportation fidelity method: {method}")
+
+    return TeleportationResult(
+        fidelity=fidelity,
+        singlet_fraction=singlet_fraction,
+        classical_bound=classical_bound,
+        beats_classical=_strictly_above(fidelity, classical_bound),
+        margin=fidelity - classical_bound,
+        method=method,
+    )
+
+
+def _werner_state(werner_p: float) -> np.ndarray:
+    bell_projector = _phi_plus_projector()
+    maximally_mixed = np.eye(4, dtype=complex) / 4
+    return (werner_p * bell_projector) + ((1 - werner_p) * maximally_mixed)
+
+
+def _phi_plus_projector() -> np.ndarray:
+    phi_plus = np.array([1, 0, 0, 1], dtype=complex) / math.sqrt(2)
+    return np.outer(phi_plus, np.conjugate(phi_plus))
+
+
+def _strictly_above(value: float, bound: float) -> bool:
+    return value > bound and not math.isclose(value, bound, abs_tol=1e-12)
 
 
 class TeleportationMission:
