@@ -46,6 +46,12 @@ V2_REQUIRED_KEYS = {
 }
 
 
+# TODO(2B): This validator is a RECOGNIZER, not a GUARD. It checks key presence
+#   only (L1). Before flipping outputs/results.json emission to v2.0, implement
+#   L2 types (+reject NaN/inf), L3 ranges, L4 constants, L5 cross-field
+#   consistency, per docs/SCHEMA_HARDENING_2B.md. Landing that hardening will
+#   intentionally break test_schema_validator_accepts_future_v2_contract_shape
+#   (all-zero sample is inconsistent under L5) — migrate it per §8 in the same PR.
 def detect_results_schema(results: Mapping[str, Any]) -> str:
     """Return ``"1"`` or ``"2.0"`` when a known results schema is recognized."""
 
