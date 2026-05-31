@@ -4,3 +4,4 @@ __pycache__/
 outputs/
 node_modules/
 .DS_Store*.egg-info/
+.DS_Store
