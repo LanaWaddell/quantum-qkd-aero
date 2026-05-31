@@ -3,13 +3,56 @@ const fs = require('fs');
 const path = require('path');
 const app = express();
 
+const resultsPaths = [
+    path.join(__dirname, 'outputs', 'results.json'),
+    path.join(__dirname, 'results.json'),
+];
+
+const imagePaths = [
+    { filePath: path.join(__dirname, 'outputs', 'qkd_teleportation.png'), publicPath: '/outputs/qkd_teleportation.png' },
+    { filePath: path.join(__dirname, 'qkd_teleportation.png'), publicPath: '/qkd_teleportation.png' },
+];
+
+function readFirstJson(paths, callback) {
+    if (paths.length === 0) {
+        callback(null, {});
+        return;
+    }
+
+    const [candidate, ...remaining] = paths;
+    fs.readFile(candidate, 'utf8', (err, data) => {
+        if (err) {
+            readFirstJson(remaining, callback);
+            return;
+        }
+
+        try {
+            callback(null, JSON.parse(data));
+        } catch (e) {
+            readFirstJson(remaining, callback);
+        }
+    });
+}
+
+function normalizeStats(results) {
+    return {
+        key_yield: (results.summary && results.summary.headline_key_yield) || results.key_yield || "---",
+        fidelity: (results.summary && results.summary.headline_fidelity) || results.fidelity || "---",
+    };
+}
+
+function getPlotPath() {
+    const plot = imagePaths.find((candidate) => fs.existsSync(candidate.filePath));
+    return plot ? plot.publicPath : '/qkd_teleportation.png';
+}
+
 // This allows the dashboard to see the PNG file in your folder
 app.use(express.static(__dirname));
 
 app.get('/', (req, res) => {
-    fs.readFile(path.join(__dirname, 'results.json'), 'utf8', (err, data) => {
-        let stats = { key_yield: "---", fidelity: "---" };
-        if (!err) { try { stats = JSON.parse(data); } catch (e) {} }
+    readFirstJson(resultsPaths, (err, data) => {
+        const stats = normalizeStats(data);
+        const plotPath = getPlotPath();
 
         res.send(`
             <html>
@@ -29,7 +72,7 @@ app.get('/', (req, res) => {
 
                     <div style="background: #1e293b; padding: 20px; border-radius: 10px; border: 1px solid #334155; display: inline-block;">
                         <h3 style="color: #94a3b8; margin-top: 0;">Live Teleportation Link Analysis</h3>
-                        <img src="/qkd_teleportation.png?t=${Date.now()}" style="max-width: 600px; border-radius: 5px; border: 1px solid #475569;">
+                        <img src="${plotPath}?t=${Date.now()}" style="max-width: 600px; border-radius: 5px; border: 1px solid #475569;">
                     </div>
 
                     <p style="color: #475569; margin-top: 30px;">Last Sync: ${new Date().toLocaleTimeString()}</p>
