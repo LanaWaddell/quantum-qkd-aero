@@ -19,6 +19,7 @@ dev = [
 ]
 qiskit = [
     "qiskit",
+    "qiskit-aer",
 ]
 
 [tool.setuptools.packages.find]
