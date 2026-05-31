@@ -2,6 +2,7 @@ qkd_env/
 __pycache__/
 *.pyc
 outputs/
+.cache/
 node_modules/
 .DS_Store*.egg-info/
 .DS_Store

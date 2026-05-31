@@ -2,16 +2,20 @@ import json
 import os
 import sys
 
+CURRENT_DIR = os.path.dirname(__file__)
+SRC_DIR = os.path.dirname(CURRENT_DIR)
+PROJECT_ROOT = os.path.dirname(SRC_DIR)
+OUTPUTS_DIR = os.path.join(PROJECT_ROOT, "outputs")
+MATPLOTLIB_CACHE_DIR = os.path.join(PROJECT_ROOT, ".cache", "matplotlib")
+
+os.makedirs(MATPLOTLIB_CACHE_DIR, exist_ok=True)
+os.environ.setdefault("MPLCONFIGDIR", MATPLOTLIB_CACHE_DIR)
+
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-
-CURRENT_DIR = os.path.dirname(__file__)
-SRC_DIR = os.path.dirname(CURRENT_DIR)
-PROJECT_ROOT = os.path.dirname(SRC_DIR)
-OUTPUTS_DIR = os.path.join(PROJECT_ROOT, "outputs")
 
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
