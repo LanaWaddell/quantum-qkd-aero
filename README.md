@@ -134,3 +134,9 @@ airmass, asymptotic key rate, simplified accidentals model).
 
 `docs/INTERFACES.md` remains the canonical Phase 2 contract; the phase specs in
 `docs/` describe the decoy/Eve and background-light work.
+
+## Research & Challenge Alignment
+
+This repository is a public research sandbox for quantum networking, secure telemetry, and aerospace-adjacent communication systems.
+
+It also informed a submission to the Quantum City Challenge, with emphasis on QKD-inspired secure communication, adaptive trust monitoring, and future city-scale quantum network architectures.
