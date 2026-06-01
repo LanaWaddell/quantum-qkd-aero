@@ -120,9 +120,9 @@ def secure_key_rate(
 
 
 def run_decoy_bb84(channel, intensities, n_pulses, detector, eve=None, *, q=0.5):
-    """Run deterministic expected-value decoy BB84 for the honest/null channel.
+    """Run deterministic expected-value decoy BB84.
 
-    This 2B-4a foundation computes expected gains, QBERs, decoy bounds, and
+    This 2B foundation computes expected gains, QBERs, decoy bounds, and
     the asymptotic key rate. It does not Monte Carlo sample finite pulses; if
     Monte Carlo is added later, estimator tests need statistical tolerances.
 
@@ -131,8 +131,6 @@ def run_decoy_bb84(channel, intensities, n_pulses, detector, eve=None, *, q=0.5)
     Finite-key corrections are out of scope for 2B-4a.
     """
 
-    if eve is not None:
-        raise NotImplementedError("Only honest/null decoy BB84 is implemented in 2B-4a.")
     if n_pulses < 0:
         raise ValueError("n_pulses must be non-negative.")
 
@@ -143,14 +141,27 @@ def run_decoy_bb84(channel, intensities, n_pulses, detector, eve=None, *, q=0.5)
     y0 = detector.dark_count_prob
     ed = channel.intrinsic_qber
 
-    gains = {
+    honest_gains = {
         name: _honest_gain(mean_photon_number, eta, y0)
         for name, mean_photon_number in intensities.items()
     }
-    qber_per_intensity = {
+    honest_qber_per_intensity = {
         name: _honest_qber(mean_photon_number, eta, y0, ed)
         for name, mean_photon_number in intensities.items()
     }
+
+    if eve is None:
+        gains = honest_gains
+        qber_per_intensity = honest_qber_per_intensity
+    else:
+        gains, qber_per_intensity = _eve_observed_statistics(
+            eve,
+            intensities=intensities,
+            eta=eta,
+            y0=y0,
+            ed=ed,
+            target_signal_gain=honest_gains["signal"],
+        )
 
     y1_lower_bound, e1_upper_bound = estimate_decoy_bounds(
         gains,
@@ -168,8 +179,8 @@ def run_decoy_bb84(channel, intensities, n_pulses, detector, eve=None, *, q=0.5)
     )
 
     honest_y1_lower_bound, _ = estimate_decoy_bounds(
-        gains,
-        qber_per_intensity,
+        honest_gains,
+        honest_qber_per_intensity,
         intensities,
     )
     decoy_anomaly_score = _relative_y1_shortfall(
@@ -285,6 +296,43 @@ def _honest_qber(mean_photon_number, eta, y0, ed):
 
     error_gain = (0.5 * y0) + (ed * (1.0 - math.exp(-eta * mean_photon_number)))
     return _clamp(error_gain / gain, 0.0, 0.5)
+
+
+def _eve_observed_statistics(eve, *, intensities, eta, y0, ed, target_signal_gain):
+    gains = {}
+    qber_per_intensity = {}
+    signal_intensity = intensities["signal"]
+
+    for name, mean_photon_number in intensities.items():
+        if mean_photon_number == 0.0:
+            gains[name] = y0
+            qber_per_intensity[name] = 0.5 if y0 > 0.0 else 0.0
+            continue
+
+        signal_detection = 0.0
+        signal_error_gain = 0.0
+
+        for photon_number, probability in poisson_distribution(mean_photon_number).items():
+            detection_probability = eve.signal_detection_probability(
+                photon_number,
+                eta=eta,
+                intensity=mean_photon_number,
+                signal_intensity=signal_intensity,
+                target_signal_gain=target_signal_gain,
+                dark_count_prob=y0,
+            )
+            detection_probability = _clamp(detection_probability, 0.0, 1.0)
+            signal_detection += probability * detection_probability
+            signal_error_gain += probability * detection_probability * eve.signal_error_rate(
+                photon_number,
+                intrinsic_qber=ed,
+            )
+
+        gains[name] = 1.0 - ((1.0 - y0) * (1.0 - signal_detection))
+        error_gain = (0.5 * y0) + signal_error_gain
+        qber_per_intensity[name] = _clamp(error_gain / gains[name], 0.0, 0.5)
+
+    return gains, qber_per_intensity
 
 
 def _relative_y1_shortfall(reference_y1, observed_y1):

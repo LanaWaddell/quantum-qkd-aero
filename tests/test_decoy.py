@@ -36,10 +36,12 @@ def test_honest_decoy_gains_match_closed_form_expectations():
         assert math.isclose(result.gains[name], expected_gain, rel_tol=0.0, abs_tol=1e-15)
 
 
-def test_decoy_estimator_matches_independent_reference_case():
+def test_decoy_estimator_matches_regression_locked_reference_case():
     channel, detector = _reference_channel_and_detector()
     result = run_decoy_bb84(channel, INTENSITIES, n_pulses=1_000_000, detector=detector)
 
+    # Regression anchors for the current Lo-Ma-Chen transcription; the
+    # tightening-limit test below provides the structural behavior check.
     assert math.isclose(
         result.y1_lower_bound,
         0.09725428004793941,
@@ -67,6 +69,28 @@ def test_decoy_estimator_is_conservative_against_true_single_photon_values():
 
     assert result.y1_lower_bound <= y1_true
     assert result.e1_upper_bound >= e1_true
+
+
+def test_decoy_bound_tightens_as_decoy_intensity_approaches_vacuum():
+    channel, detector = _reference_channel_and_detector()
+    eta = channel.transmittance * detector.detection_efficiency
+    y0 = detector.dark_count_prob
+    y1_true = 1.0 - ((1.0 - y0) * (1.0 - eta))
+    decoy_intensities = [0.2, 0.1, 0.05, 0.02, 0.01]
+
+    estimates = [
+        run_decoy_bb84(
+            channel,
+            {"signal": 0.5, "decoy": decoy_intensity, "vacuum": 0.0},
+            n_pulses=1_000_000,
+            detector=detector,
+        ).y1_lower_bound
+        for decoy_intensity in decoy_intensities
+    ]
+
+    assert all(estimate <= y1_true for estimate in estimates)
+    assert estimates == sorted(estimates)
+    assert (y1_true - estimates[-1]) < (y1_true - estimates[0])
 
 
 def test_honest_channel_has_zero_decoy_anomaly_and_positive_key_rate():
