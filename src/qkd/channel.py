@@ -59,7 +59,7 @@ def atmospheric_transmittance(elevation_deg, zenith_optical_depth):
 
 
 def geometric_transmittance(slant_range_km, beam_divergence_urad, rx_aperture_m):
-    """Return Gaussian beam fraction coupled into a receiver aperture diameter."""
+    """Return Gaussian beam fraction coupled into a receiver aperture diameter in meters."""
 
     if slant_range_km < 0.0:
         raise ValueError("slant_range_km must be non-negative")
