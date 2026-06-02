@@ -137,6 +137,11 @@ airmass, asymptotic key rate, simplified accidentals model).
 
 ## Research & Challenge Alignment
 
-This repository is a public research sandbox for quantum networking, secure telemetry, and aerospace-adjacent communication systems.
+This repository is a public research sandbox for quantum networking, secure 
+telemetry, and aerospace-adjacent communication systems. Its themes align with a
+submission to the Quantum City Challenge (Securing Critical Infrastructure), which 
+proposed a Cognitive Quantum Network layer for adaptive, trust-aware QKD. This 
+repository develops the physics-layer foundation — computed channel, decoy-state, 
+and coherence models with monitored signals (QBER, loss, secure-key rate) — on 
+which such an adaptive trust layer would be built.
 
-It also informed a submission to the Quantum City Challenge, with emphasis on QKD-inspired secure communication, adaptive trust monitoring, and future city-scale quantum network architectures.
