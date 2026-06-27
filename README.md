@@ -53,10 +53,10 @@ real system.
   tests noted (turbulence-independence, geometry coupling, decoy bounds,
   PNS-invisible-to-QBER, fidelity arch).
 
-**Note on legacy paths:** earlier "toy" routines (`run_bb84`, the
-`TeleportationMission` animation, the `fidelity_noise` curve) are preserved for
-backward compatibility but are no longer the basis of the computed physics; some
-are slated for removal as the dashboard is rewired to the computed quantities.
+**Note on legacy paths:** the decorative `TeleportationMission` /
+`fidelity_noise` producer path was retired in Phase 2B-6a to enforce the
+single-authoritative-pipeline invariant: one production writer per generated
+artifact. See `docs/architecture/ADR-0001-single-authoritative-pipeline.md`.
 
 ## Current Workflow
 
@@ -109,8 +109,9 @@ coherence, signals, run), with the dashboard in `dashboard.js` and tests in
 preparation, noise-model, and measurement-count routines) — potential Qiskit
 porting candidates, not part of the active workflow.
 
-Root PNGs and root `results.json` are tracked fallback/demo artifacts; fresh
-output is written under `outputs/`.
+Root PNGs remain tracked fallback/demo artifacts. The stale root `results.json`
+artifact was removed in Phase 2B-6a; production JSON is written under `outputs/`
+by the authoritative simulator pipeline.
 
 ## Scope & Honesty
 
