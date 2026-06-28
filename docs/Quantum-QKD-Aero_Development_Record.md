@@ -1,5 +1,14 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
+> **REVISION 3 — updated 2026-06-27.** This revision records completion of
+> PR0 / Phase 2B-6a and PR1 / Phase 2B-6b. The single-authoritative-pipeline
+> invariant is now implemented: `run.py` is the sole production writer of
+> `outputs/results.json`. The honest pass composition now lives in `mission.py`;
+> `run.py` is I/O/plotting only; the `5.00 Kb` placeholder and
+> `remaining_entangled_resource_kb` output key are retired; v1 output remains
+> recognized; and provenance/run metadata are emitted from birth. PR2 / 2B-6c
+> remains planned for provenance hardening.
+>
 > **REVISION 2 — corrected 2026-06-27.** This supersedes Revision 1. Revision 1
 > contained a load-bearing error: it stated the original decorative quantities were
 > "now gone or grounded." They were gone from the `run.py` pipeline but **still present
@@ -46,11 +55,17 @@ that path **wrote the same `outputs/results.json` that `run.py` writes.** So the
 dashboard." This is the deeper issue: until exactly one authoritative pipeline writes
 each artifact, the project cannot honestly claim "computed, not decorative," because two
 different programs can generate the same output. These symbols date to the **initial
-commit `2924673` (2026-04-06)** and predate the 2B refactor. They are retired in
-**PR0 / Phase 2B-6a** ("Restore Single Authoritative Pipeline"), which establishes the
+commit `2924673` (2026-04-06)** and predate the 2B refactor. They were retired in
+**PR0 / Phase 2B-6a** ("Restore Single Authoritative Pipeline"), which established the
 durable invariant: *exactly one authoritative production pipeline per artifact; any
 historical/experimental pipeline must write separate outputs and never overwrite a
 production artifact.*
+
+**Rev 3 update:** PR1 / 2B-6b then restored the quantity-level ownership invariant.
+`mission.py` is now the single composition point for the pass; it integrates per-pulse
+decoy secure-key rate over the satellite opportunity, computes per-sample effective
+Werner quality and fidelity, and emits provenance tags. `run.py` now only plots,
+formats, and writes artifacts from that composed result.
 
 The discipline throughout otherwise holds: if a quantity isn't checked against a
 known-true value or a structural invariant, it isn't trusted — and verification
@@ -70,24 +85,30 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | 2B-4a | Honest decoy-state BB84 foundation | ✅ committed |
 | 2B-4b | QND/PNS Eve (hidden breach) + secure key rate | ✅ committed |
 | 2B-5  | Background light → effective werner_p (fidelity arch) | ✅ committed |
-| **2B-6a** | **Restore Single Authoritative Pipeline (retire legacy decorative path)** | **planned (PR0)** |
-| **2B-6b** | **Honest pass composition (mission.py, yield integral, fidelity arch, run.py→I/O)** | **planned (PR1)** |
-| **2B-6c** | **Provenance system (epistemic tagging, enforced)** | **planned (PR2)** |
+| **2B-6a** | **Restore Single Authoritative Pipeline (retire legacy decorative path)** | ✅ committed |
+| **2B-6b** | **Honest pass composition (mission.py, yield integral, fidelity arch, run.py→I/O)** | ✅ committed |
+| **2B-6c** | **Provenance hardening (enforcement, consistency, boundaries)** | **planned (PR2)** |
 
-**Test suite (corrected count):** at Rev-2 verification, **74 passed, 1 skipped**
-without the qiskit extra; **95 passed** with it (74 base + 21 qiskit tests). Rev 1's
-bare "95 passed" was the with-qiskit total, not a no-qiskit baseline. After PR0 removes
-three legacy tests, the baseline becomes **71 / 92**.
+**Test suite (current Rev-3 count):** after PR1, the baseline without the qiskit extra is
+**83 passed, 1 skipped**. With qiskit installed, the suite is **104 passed** (83 base
+tests + 21 qiskit parametrized tests). The single skip without qiskit is the module-level
+`pytest.importorskip("qiskit")` in `tests/test_teleportation_qiskit.py`. PR1 added 12
+non-qiskit tests: 10 mission/composition tests and 2 provenance tests. Historical count:
+Rev 2 corrected the pre-PR0 baseline to 74 base / 95 with qiskit; after PR0 it was
+71 base / 92 with qiskit.
 
-`python src/qkd/run.py` prints `Min loss 27.7 dB | Fidelity 0.990` (verified). NOTE:
-`qkd_model.py` prints a *different* decorative headline and overwrites the same JSON;
-this is the two-producer condition PR0 resolves.
+`python src/qkd/run.py` prints `Min loss 27.7 dB | Fidelity 0.990` (verified). The output
+now includes an honest integrated key-yield headline (currently `1282.24 Kb` under the
+illustrative defaults), a v1-recognized schema, `run_metadata`, and a `provenance` block.
+The stale root `results.json` is gone; `outputs/results.json` remains the production
+artifact.
 
 ---
 
 ## 2. Phase-by-phase detail
 
-*(Verified accurate at Rev-2 against the repo; retained from Rev 1.)*
+*(Verified accurate at Rev 3 against the repo; earlier historical notes are retained
+where they explain how the system evolved.)*
 
 ### 2B-1a — Computed teleportation fidelity & CHSH
 **Files:** `src/qkd/teleportation.py`, `src/qkd/chsh.py`, `tests/test_teleportation.py`,
@@ -110,12 +131,16 @@ this is the two-producer condition PR0 resolves.
 **Files:** `src/qkd/teleportation.py` (`method="qiskit"`), `tests/test_teleportation_qiskit.py`,
 optional `[qiskit]` extra in `pyproject.toml`.
 
-- Third validation path: coherent teleportation circuit on a density-matrix simulator,
-  Werner resource via a depolarizing channel with **λ = 1−p**, averaged fidelity via the
-  Choi/entanglement-fidelity route (`F_avg = (2·F_e + 1)/3`). Deterministic; tests to 1e-9.
+- Third validation path: coherent teleportation circuit using Qiskit's deterministic
+  `quantum_info` density-matrix/Kraus APIs, Werner resource via a depolarizing channel
+  with **λ = 1−p**, averaged fidelity via the Choi/entanglement-fidelity route
+  (`F_avg = (2·F_e + 1)/3`). Deterministic; tests to 1e-9.
 - The recipe was verified independently in numpy first; an intermediate test asserts the
   resource singlet fraction `(1+3p)/4`, guarding the λ=1−p mapping.
-- Result: analytic = numeric = qiskit. (qiskit 2.4.x / qiskit-aer 0.17.x.)
+- Result: analytic = numeric = qiskit. Current verified local version: qiskit 2.4.1.
+  `qiskit-aer` 0.17.2 may remain installed in the local environment from earlier
+  validation, but it is not imported by the repo and is no longer declared in the
+  optional `[qiskit]` extra.
 
 ### 2B-2 — Honest channel
 **Files:** `src/qkd/channel.py` (extended), `tests/test_channel.py` (extended).
@@ -126,23 +151,25 @@ optional `[qiskit]` extra in `pyproject.toml`.
 - **werner_p is SPECIFIED, not weather-derived.** Honesty guard: turbulence changes η
   but NOT werner_p.
 - Parameters illustrative, not calibrated. η is realistically tiny (~1e-3 to 1e-4).
-- **Contract note (Rev 2):** `ChannelState.transmittance` excludes receiver detector QE
+- **Contract note (Rev 3):** `ChannelState.transmittance` excludes receiver detector QE
   (owned by `DetectorParams.detection_efficiency`); both `run_decoy_bb84` and
-  `coherence.signal_coincidence_rate` multiply the two. To be ratified explicitly in
-  `INTERFACES.md` in PR1 (2B-6b) and guarded by a single-fold-scaling test.
+  `coherence.signal_coincidence_rate` multiply the two. PR1 ratified this in
+  `docs/INTERFACES.md`, documented `system_efficiency` as transmit/optics/coupling up to
+  the detector face, and added a single-fold detector-efficiency scaling guard in
+  `tests/test_mission.py`.
 
 ### 2B-3 — Real satellite pass; sine curve dies (in run.py)
 **Files:** `src/qkd/run.py` (rewritten), `src/qkd/orbit.py` (new), `tests/test_orbit.py` (new).
 
-- `run.py` drives a satellite pass → per-sample `channel_state()` → η → loss in dB, with
-  computed `teleportation_fidelity(werner_p)` as a flat reference. `fidelity_noise` is no
-  longer called *by run.py*. **(Rev-2 correction: it is still called by `qkd_model.py`;
-  see §0.)**
+- Historical 2B-3 state: `run.py` drove a satellite pass → per-sample `channel_state()` →
+  η → loss in dB, with computed `teleportation_fidelity(werner_p)` as a flat reference.
+  `fidelity_noise` stopped being called by `run.py` here. **(Rev-2 correction: before
+  PR0 it was still called by `qkd_model.py`; see §0.)**
 - Loss reported as positive-magnitude dB; "min loss" = closest approach.
 - `results.json` keeps v1 schema keys valid and adds a `pass_profile` block.
-- **Labeled placeholder retained:** `remaining_entangled_resource_kb` /
-  `headline_key_yield` kept for v1-schema compatibility, marked `# TODO(2B-decoy)`. (Rev 2:
-  retired in PR1 — the honest yield becomes an integral of per-pulse SKR over the pass.)
+- **Rev 3:** PR1 moved this pass composition out of `run.py` and into `mission.py`.
+  The `remaining_entangled_resource_kb` / `5.00 Kb` placeholder has been retired; honest
+  yield is now an integral of per-pulse SKR over the pass.
 
 ### 2B-3 orbit hardening — derived geometry
 **Files:** `src/qkd/orbit.py` (replaced), `tests/test_orbit.py` (10 tests).
@@ -185,9 +212,62 @@ optional `[qiskit]` extra in `pyproject.toml`.
 - `effective_werner_p(...)`: `p_eff = p_source · S/(S+B)`, `S ∝ η_link`,
   `B = R_bg · R_local · Δt` (product of rates × window). B independent of link
   transmittance. Separate module — the 2B-2 guard holds untouched.
-- **Honesty guard:** B=0 (night) → `p_eff = p_source` exactly. Daytime fidelity ARCHES
-  (~0.70 peak → ~0.51 horizon, below 2/3 near horizon); night flat at 0.99. (Rev 2:
-  not yet wired into the displayed pass — that is PR1.)
+- **Honesty guard:** B=0 (night) → `p_eff = p_source` exactly, including the
+  `S=0, B=0` edge. Daytime fidelity ARCHES under the current illustrative defaults
+  (~0.571 peak → ~0.503 horizon, below 2/3 near horizon); night is flat at 0.99.
+  PR1 wires this per-sample fidelity path through `mission.py` and into `run.py`; the
+  default displayed pass uses `DEFAULT_SKY_CONDITION = "night"`, so it stays flat for a
+  physical reason rather than as a drawn line.
+
+### 2B-6a — Restore Single Authoritative Pipeline
+**Files:** deleted `qkd_model.py` and root `results.json`; edited
+`src/qkd/teleportation.py`, `src/qkd/channel.py`, `tests/test_teleportation.py`,
+`tests/test_channel.py`; added `docs/architecture/ADR-0001-single-authoritative-pipeline.md`.
+
+- Removed the original decorative simulator path: `qkd_model.py`,
+  `TeleportationMission`, `build_teleportation_results`, and `fidelity_noise`.
+- Removed the three tests that existed only to preserve those retired symbols.
+- Removed the stale root `results.json` fallback artifact; **did not remove**
+  `outputs/results.json`.
+- Established the §4.0 invariant: exactly one authoritative production pipeline per
+  generated artifact. For `outputs/results.json`, the sole writer is `src/qkd/run.py`.
+- Preserved the decision and provenance in ADR-0001 rather than archiving executable
+  decorative code.
+
+### 2B-6b — Honest pass composition, born provenance-tagged
+**Files:** `src/qkd/mission.py`, `src/qkd/provenance.py`, `src/qkd/run.py`,
+`src/qkd/schema.py`, `src/qkd/coherence.py`, `src/qkd/channel.py`,
+`docs/INTERFACES.md`, `tests/test_mission.py`, `tests/test_provenance.py`,
+`tests/test_coherence.py`, `tests/test_schema.py`.
+
+- `mission.py` is now the composition layer. It introduces no new physics and performs
+  no I/O. `simulate_pass()` still works with zero arguments; `MissionConfig` is a small
+  defaults bundle, not a configuration framework.
+- Default illustrative constants live in `mission.py`: `PULSE_REPETITION_RATE_HZ =
+  1.0e8`, `INTENSITIES = {"signal": 0.5, "decoy": 0.1, "vacuum": 0.0}`,
+  `DEFAULT_N_PULSES = 1_000_000`, `DEFAULT_SKY_CONDITION = "night"`, and
+  `DetectorParams(detection_efficiency=0.5, dark_count_prob=1.0e-6)`.
+- Honest yield is now
+  `secure_key_yield_bits = Σ secure_key_rate_per_pulse_i · f_rep · Δt_sample`. Under
+  the current defaults, the dashboard headline is `1282.24 Kb`; this is an illustrative
+  hardware-scaled yield, not a calibrated mission-performance claim.
+- `werner_p_source` is treated as a single scalar channel/source constant across the
+  pass; `mission._single_werner_source()` guards against accidental per-sample drift.
+- `run.py` now only calls `simulate_pass()`, renders the plot, writes
+  `outputs/results.json`, and prints the headline. Physics arithmetic moved into
+  `mission.py`.
+- The v1 schema recognizer remains active, but `remaining_entangled_resource_kb` is no
+  longer required or emitted. This is a contained v1 evolution, not a v2.0 switchover.
+- `run_metadata` is emitted deterministically:
+  `{generator: "run.py", pipeline: "mission.simulate_pass", physics_mode: "computed"}`.
+- `src/qkd/provenance.py` declares in-use tags (`ANALYTIC`, `SIMULATED`, `DERIVED`,
+  `ILLUSTRATIVE`) and reserved tags (`MEASURED`, `ESTIMATED`, `VALIDATED`). PR1 emits
+  field-level tags for `summary`, `teleportation`, and pass-profile quantities, but does
+  not implement PR2 hardening such as transitive DERIVED consistency.
+- Tests added: 10 mission/composition tests and 2 provenance tests. Guards include the
+  yield integral, honest-zero yield, detector QE composed exactly once, day arch,
+  night-flat B=0 control, v1 schema/dead-key removal, provenance completeness,
+  `run.py` delegation, and unchanged `signals.py` dataclasses.
 
 ---
 
@@ -195,10 +275,12 @@ optional `[qiskit]` extra in `pyproject.toml`.
 
 `src/qkd/`: `teleportation.py`, `chsh.py`, `channel.py`, `orbit.py`, `bb84.py`,
 `eve.py`, `coherence.py`, `signals.py` (dataclasses: `ChannelState`,
-`DetectorParams`, `PhysicsSignals` — no trust field, by design), `run.py`,
-`schema.py`, `mission.py` (Phase-2A stub; becomes the composition layer in PR1).
+`DetectorParams`, `PhysicsSignals` — no trust field, by design), `mission.py`
+(single pass-composition layer), `provenance.py` (observational field-origin tags),
+`run.py` (I/O and plotting only), and `schema.py` (v1/v2 recognizer; v1 no longer
+requires `remaining_entangled_resource_kb`).
 
-**Legacy decorative path (Rev 2 — retired in PR0/2B-6a):**
+**Legacy decorative path (Rev 3 — retired in PR0/2B-6a):**
 - `qkd_model.py` (repo root) — second entry point; deleted in PR0.
 - `teleportation.py::TeleportationMission`, `teleportation.py::build_teleportation_results`,
   `channel.py::fidelity_noise` — the decorative curve, countdown, and noise; removed in PR0.
@@ -209,57 +291,78 @@ optional `[qiskit]` extra in `pyproject.toml`.
 
 Docs: `docs/INTERFACES.md` (canonical contract), `docs/SCHEMA_HARDENING_2B.md`,
 `docs/PHASE_2B4_DECOY_EVE.md`, `docs/PHASE_2B5_BACKGROUND_LIGHT.md`,
-`docs/PHASE_2B6_SEQUENCE.md` (the active PR0→PR1→PR2 spec).
+`docs/PHASE_2B6_SEQUENCE.md` (PR0/PR1 completed; PR2 remains next), and
+`docs/architecture/ADR-0001-single-authoritative-pipeline.md`.
 Archive: `01-Gate-Noise-Archive/` (preserved Qiskit/QEC research — do not delete).
 
 **Parameter honesty:** every illustrative parameter is documented as representative,
 NOT calibrated. The simulator models correct *relationships and behaviours*, not the
 absolute performance of any real link.
 
+**Current output shape:** `outputs/results.json` remains v1-recognized and currently has
+top-level `teleportation`, `summary`, `pass_profile`, `provenance`, and `run_metadata`
+sections. `teleportation` contains `frames`, `average_fidelity`, `classical_limit`, and
+`plot`; it no longer contains `remaining_entangled_resource_kb`.
+
 ---
 
 ## 4. What's next (precise) — corrected sequence
 
 Active spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate per PR (plan+approval,
-then implement+diffs+tests). Order:
+then implement+diffs+tests). Current state:
 
-1. **PR0 / 2B-6a — Restore Single Authoritative Pipeline.** Delete `qkd_model.py`,
-   `TeleportationMission`, `build_teleportation_results`, `fidelity_noise`, the three
-   legacy tests, and the stale root `results.json`; write ADR-0001. Establishes the
-   one-producer-per-artifact invariant. No schema or `run.py` change. Expected suite:
-   71 / 92.
-2. **PR1 / 2B-6b — Honest composition.** `mission.simulate_pass` composes
-   geometry→channel→decoy SKR→coherence p_eff→fidelity. Retire the `5.00 Kb` placeholder:
-   honest yield = `Σ SKR_i · f_rep · Δt` (per-pulse rate integrated over the pass). Wire
-   the daytime fidelity arch. Reduce `run.py` to I/O only. Drop the dead
-   `remaining_entangled_resource_kb` key (contained v1 evolution, NOT the v2.0 flip). Add
-   a minimal `run_metadata` producer stamp. Provenance co-designed from birth.
-   **Blocking decisions:** transmittance contract (§2B-2 note) and `f_rep` value.
-3. **PR2 / 2B-6c — Provenance system.** `Provenance` enum (ANALYTIC / SIMULATED / DERIVED
-   / ILLUSTRATIVE in use; MEASURED / ESTIMATED / VALIDATED reserved), enforced:
-   completeness, illustrative-honesty, reserved-non-use, and DERIVED-input transitive
-   consistency. Optional seed: a computed `depends_on_illustrative` boolean (the honest
-   seed of a future uncertainty dimension; full scale deferred to the optimization phase).
+1. **PR0 / 2B-6a — Restore Single Authoritative Pipeline: complete.** The legacy
+   decorative pipeline and stale root artifact are gone. ADR-0001 records the decision.
+2. **PR1 / 2B-6b — Honest composition: complete.** `mission.simulate_pass` composes
+   geometry→channel→decoy SKR→coherence p_eff→fidelity; yield is the pass integral;
+   `run.py` is I/O only; the dead `remaining_entangled_resource_kb` key is dropped; v1
+   output remains recognized; and deterministic `run_metadata` plus provenance tags are
+   emitted.
+3. **PR2 / 2B-6c — Provenance hardening: next active milestone.** The enum and emitted
+   tags exist from PR1. PR2 should harden the mechanism: reserved-tag non-use
+   enforcement, DERIVED-input transitive consistency, the formal SIMULATED/DERIVED
+   boundary, and any approved `depends_on_illustrative` seed. It should not change
+   physics values.
 
-**Further out (unchanged):** Phase 2C mission orchestration (the composition seed grows
-here); Phase 2D trust/cognitive layer reading `PhysicsSignals` (the wall holds — no trust
-field in physics); coherence-enhancement optimization (maximize p_eff / key rate over
-filtering levers Δt/bandwidth/FOV vs. signal loss). The applied target (Quantum City
-municipal-fibre proposal) reuses this verified substrate by swapping the channel
-front-end; the CQN layer in that proposal maps onto Phase 2D.
+**Further out (updated):** Phase 2C broader mission orchestration grows from the
+`simulate_pass` composition layer rather than inventing a second composition point.
+Phase 2D trust/cognitive work reads `PhysicsSignals` and/or emitted physics outputs (the
+wall holds — no trust field in physics). Coherence-enhancement optimization can operate
+over filtering levers Δt/bandwidth/FOV vs. signal loss, with `f_rep` held fixed as
+hardware. The applied target (Quantum City municipal-fibre proposal) reuses this verified
+substrate by swapping the channel front-end; the CQN layer in that proposal maps onto
+Phase 2D.
 
 **Schema decision (standing):** v2.0 emission + L2–L5 validator hardening
-(`SCHEMA_HARDENING_2B.md`) is its own PR. Dropping a single dead v1 key (PR1) is a
-contained evolution, not the v2.0 flip. Do not half-switch.
+(`SCHEMA_HARDENING_2B.md`) remains its own PR. PR1's drop of the single dead v1 key and
+addition of `provenance`/`run_metadata` were v1-compatible, additive/contained changes,
+not the v2.0 flip. Do not half-switch.
 
 **If picking up fresh:** read this + `docs/INTERFACES.md` + `docs/PHASE_2B6_SEQUENCE.md`;
-run `pytest -v` to confirm the baseline; reconcile any module against the actual repo
-file (not a remembered version) before editing; enumerate entry points / artifact
-writers / consumers first.
+run `pytest -v` to confirm the baseline (**83 passed, 1 skipped** without qiskit;
+**104 passed** with qiskit); reconcile any module against the actual repo file (not a
+remembered version) before editing; enumerate entry points / artifact writers /
+consumers first.
 
 ---
 
 ## Correction Log
+
+- **2026-06-27 (Rev 3).** Updated the record after PR0 / 2B-6a and PR1 / 2B-6b
+  completion. PR0 retired `qkd_model.py`, `TeleportationMission`,
+  `build_teleportation_results`, `fidelity_noise`, the stale root `results.json`, and
+  the three legacy tests, establishing the single-authoritative-pipeline invariant.
+  PR1 added the honest pass composition layer in `mission.py`, reduced `run.py` to
+  I/O/plotting, replaced the `5.00 Kb` placeholder with the secure-key-yield integral,
+  dropped `remaining_entangled_resource_kb` from v1 required keys and emission, added
+  deterministic `run_metadata`, introduced observational provenance tags, ratified the
+  transmittance/f_rep ownership contracts in `INTERFACES.md`, and added 12 non-qiskit
+  tests. Current suite count: 83 passed / 1 skipped without qiskit; 104 passed with
+  qiskit. This revision also corrects the older shorthand that paired the Qiskit
+  validation path with `qiskit-aer`: Aer may be locally installed from earlier
+  experiments, but the implemented validation imports only `qiskit.quantum_info` APIs
+  and the project declares only `qiskit` in the optional extra. PR2 / 2B-6c remains
+  planned for provenance hardening.
 
 - **2026-06-27 (Rev 2).** Corrected the §0 claim that the decorative fidelity curve and
   the resource countdown were "now gone or grounded." They were gone from `run.py` but

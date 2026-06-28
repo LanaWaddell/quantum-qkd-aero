@@ -9,12 +9,24 @@ def test_schema_validator_accepts_current_v1_output_shape():
             "frames": 1000,
             "average_fidelity": 0.851,
             "classical_limit": 0.67,
-            "remaining_entangled_resource_kb": 5.0,
             "plot": "outputs/qkd_teleportation.png",
         },
         "summary": {
             "headline_key_yield": "5.00 Kb",
             "headline_fidelity": "0.851",
+        },
+        "provenance": {
+            "teleportation.frames": "DERIVED",
+            "teleportation.average_fidelity": "DERIVED",
+            "teleportation.classical_limit": "ANALYTIC",
+            "teleportation.plot": "DERIVED",
+            "summary.headline_key_yield": "DERIVED",
+            "summary.headline_fidelity": "DERIVED",
+        },
+        "run_metadata": {
+            "generator": "run.py",
+            "pipeline": "mission.simulate_pass",
+            "physics_mode": "computed",
         },
     }
 

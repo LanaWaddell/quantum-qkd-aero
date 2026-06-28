@@ -19,7 +19,7 @@ P_SRC = 0.98
 
 
 def test_zero_background_recovers_source_p_for_any_transmittance():
-    for eta in (0.001, 0.01, 0.1, 0.5, 1.0):
+    for eta in (0.0, 0.001, 0.01, 0.1, 0.5, 1.0):
         p_eff = effective_werner_p(eta, P_SRC, DET_EFF, background_rate_hz=0.0)
         assert math.isclose(p_eff, P_SRC, abs_tol=1e-15), eta
 

@@ -45,6 +45,39 @@ The elegant consequence: **one `werner_p` analytically drives both
 teleportation fidelity and CHSH**, so those two outputs stay physically coupled
 through a single parameter instead of being independent decorative curves.
 
+### 1.1 Ownership invariant
+
+Every physical quantity has exactly one owner, is composed exactly once, and no
+layer may silently absorb the responsibility of another. PR0 established the
+artifact form of this rule: one authoritative production writer per generated
+artifact. PR1 extends it to quantities: channel loss, detector efficiency,
+mission opportunity, and control/policy choices must remain in their owning
+layers and meet only at explicit composition points.
+
+Layer glossary:
+
+- **Physics** produces probabilities.
+- **Hardware** converts arriving photons into measurements.
+- **Mission** determines opportunity: orbit, pass geometry, weather, and run
+  context.
+- **Control/Policy** determines decisions such as filtering, optimization, and
+  scheduling.
+
+`ChannelState.transmittance` is a representation contract: it is the probability
+that a photon launched at the transmitter aperture arrives at the receiver's
+detection stage. It includes propagation/channel/optical losses up to the
+detector face: geometric capture, atmospheric transmission, pointing, optical
+path, and coupling. It excludes detector quantum efficiency, dead time, dark
+counts, and timing; those belong to `DetectorParams`. End-to-end detection
+efficiency is composed only at the point of use as
+`transmittance * detector.detection_efficiency`.
+
+The pulse repetition rate `f_rep` is a hardware-layer parameter, not a physical
+constant. Phase 2B-6b uses the illustrative fixed value
+`PULSE_REPETITION_RATE_HZ = 1.0e8` in `mission.py`. It is representative but not
+calibrated, and it is intentionally held fixed during future optimization so an
+optimizer cannot trivially improve yield by increasing the transmitter clock.
+
 ---
 
 ## 2. Dependency graph
@@ -78,7 +111,7 @@ from dataclasses import dataclass
 @dataclass
 class ChannelState:
     """Physical channel conditions, resolved to the two governing parameters."""
-    transmittance: float          # η ∈ [0, 1]   photon survival probability
+    transmittance: float          # η ∈ [0, 1]   arrival probability at detector stage
     werner_p: float               # p ∈ [0, 1]   1 = perfect Bell pair, 0 = maximally mixed
     intrinsic_qber: float         # e_d ∈ [0, 0.5]  optical misalignment — NOT caused by Eve
     dark_count_prob: float        # Y_0, per detection window
@@ -228,7 +261,10 @@ def chsh_value(werner_p: float, *, method: str = "analytic") -> CHSHResult: ...
 Same analytic/qiskit policy as teleportation.
 
 ### `src/qkd/mission.py`  `[2C — reserve name in 2A]`
-Chains the calibrated modules into one experiment. **Not implemented in 2A.**
+Chains the calibrated modules into one experiment. Phase 2B-6b makes this the
+single pass-composition layer: it performs no I/O and introduces no new physics.
+The zero-argument default pass remains available through `simulate_pass()`.
+
 Reserved contract:
 ```python
 def run_mission(channel: ChannelState, detector: DetectorParams,
@@ -237,6 +273,19 @@ def run_mission(channel: ChannelState, detector: DetectorParams,
 ```
 Flow: BB84/decoy → QBER + gains + anomaly → teleportation fidelity (from p) →
 CHSH (from p) → collect into `PhysicsSignals`. No scoring. No trust.
+
+Phase 2B-6b pass composition:
+
+```python
+PULSE_REPETITION_RATE_HZ = 1.0e8  # illustrative fixed hardware clock
+
+def simulate_pass(config=None, *, eve=None) -> PassResult: ...
+```
+
+The secure-key yield is an integral over the pass:
+`sum(secure_key_rate_per_pulse_i * PULSE_REPETITION_RATE_HZ * dt)`. The clock
+rate is hardware-owned and fixed; BB84 owns per-pulse secure-key rate; mission
+owns only the composition and integration over opportunity.
 
 ---
 

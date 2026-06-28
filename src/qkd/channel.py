@@ -6,6 +6,8 @@ from qkd.signals import ChannelState
 
 DEFAULT_ATMOSPHERE = {
     "zenith_optical_depth": 0.20,
+    # Transmit/optics/coupling efficiency up to the detector face;
+    # detector quantum efficiency belongs to DetectorParams.
     "system_efficiency": 0.50,
     "beam_divergence_urad": 10.0,
     "rx_aperture_m": 0.50,

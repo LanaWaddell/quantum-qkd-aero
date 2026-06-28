@@ -1,5 +1,4 @@
 import json
-import math
 import os
 import sys
 
@@ -21,34 +20,13 @@ import matplotlib.pyplot as plt
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
-from qkd.channel import channel_state
-from qkd.orbit import satellite_pass
-from qkd.teleportation import teleportation_fidelity
+from qkd.mission import simulate_pass
 
 
 def main():
     os.makedirs(OUTPUTS_DIR, exist_ok=True)
 
-    pass_geometry = satellite_pass()
-    channel_states = [
-        channel_state(
-            elevation_deg=elevation_deg,
-            slant_range_km=slant_range_km,
-        )
-        for elevation_deg, slant_range_km in zip(
-            pass_geometry.elevation_deg,
-            pass_geometry.slant_range_km,
-        )
-    ]
-
-    transmittance = [state.transmittance for state in channel_states]
-    loss_db = [_channel_loss_db(eta) for eta in transmittance]
-    min_loss_index = min(range(len(loss_db)), key=loss_db.__getitem__)
-    min_loss_db = loss_db[min_loss_index]
-    strongest_link_state = channel_states[min_loss_index]
-
-    teleportation = teleportation_fidelity(strongest_link_state.werner_p)
-    fidelities = [teleportation.fidelity for _ in pass_geometry.time_s]
+    result = simulate_pass()
 
     plot_path = os.path.join(OUTPUTS_DIR, "qkd_teleportation.png")
     results_path = os.path.join(OUTPUTS_DIR, "results.json")
@@ -57,10 +35,10 @@ def main():
 
     ax1.set_xlabel("Satellite pass time (s)")
     ax1.set_ylabel("Channel loss (dB)", color="blue")
-    ax1.plot(pass_geometry.time_s, loss_db, color="blue", alpha=0.75, label="Channel loss")
+    ax1.plot(result.time_s, result.loss_db, color="blue", alpha=0.75, label="Channel loss")
     ax1.scatter(
-        [pass_geometry.time_s[min_loss_index]],
-        [min_loss_db],
+        [result.time_s[result.min_loss_index]],
+        [result.min_loss_db],
         color="blue",
         s=30,
         zorder=3,
@@ -71,14 +49,14 @@ def main():
     ax2 = ax1.twinx()
     ax2.set_ylabel("Teleportation fidelity", color="green")
     ax2.plot(
-        pass_geometry.time_s,
-        fidelities,
+        result.time_s,
+        result.fidelity,
         color="green",
         linewidth=2,
         label="Computed fidelity",
     )
     ax2.axhline(
-        y=teleportation.classical_bound,
+        y=result.classical_bound,
         color="red",
         linestyle="--",
         label="Classical limit",
@@ -92,66 +70,53 @@ def main():
     plt.savefig(plot_path)
     plt.close(fig)
 
-    results = _build_results(
-        pass_geometry=pass_geometry,
-        transmittance=transmittance,
-        loss_db=loss_db,
-        min_loss_index=min_loss_index,
-        teleportation_fidelity_value=teleportation.fidelity,
-        plot_path="outputs/qkd_teleportation.png",
-    )
+    results = _build_results(result, plot_path="outputs/qkd_teleportation.png")
 
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(results, f)
 
     print(
         "Dashboard Updated: "
-        f"Min loss {min_loss_db:.1f} dB | "
-        f"Fidelity {teleportation.fidelity:.3f}"
+        f"Min loss {result.min_loss_db:.1f} dB | "
+        f"Fidelity {result.mean_fidelity:.3f}"
     )
 
 
-def _channel_loss_db(eta):
-    if eta <= 0.0:
-        return math.inf
-    return -10.0 * math.log10(eta)
-
-
-def _build_results(
-    *,
-    pass_geometry,
-    transmittance,
-    loss_db,
-    min_loss_index,
-    teleportation_fidelity_value,
-    plot_path,
-):
-    min_loss_db = loss_db[min_loss_index]
-    remaining_entangled_resource_kb = 5.0  # TODO(2B-decoy): replace with key/resource accounting.
-    headline_key_yield = f"{remaining_entangled_resource_kb:.2f} Kb"  # TODO(2B-decoy): replace with SKR.
+def _build_results(result, *, plot_path):
+    headline_key_yield = f"{result.secure_key_yield_bits / 1_000.0:.2f} Kb"
 
     return {
         "teleportation": {
-            "frames": len(pass_geometry.time_s),
-            "average_fidelity": round(teleportation_fidelity_value, 3),
-            "classical_limit": 0.67,
-            "remaining_entangled_resource_kb": remaining_entangled_resource_kb,
+            "frames": len(result.time_s),
+            "average_fidelity": round(result.mean_fidelity, 3),
+            "classical_limit": result.classical_bound,
             "plot": plot_path,
         },
         "summary": {
             "headline_key_yield": headline_key_yield,
-            "headline_fidelity": f"{teleportation_fidelity_value:.3f}",
+            "headline_fidelity": f"{result.mean_fidelity:.3f}",
         },
         "pass_profile": {
-            "time_s": pass_geometry.time_s,
-            "elevation_deg": pass_geometry.elevation_deg,
-            "slant_range_km": pass_geometry.slant_range_km,
-            "transmittance": transmittance,
-            "loss_db": loss_db,
-            "min_loss_db": min_loss_db,
-            "min_loss_time_s": pass_geometry.time_s[min_loss_index],
-            "min_loss_elevation_deg": pass_geometry.elevation_deg[min_loss_index],
-            "min_loss_slant_range_km": pass_geometry.slant_range_km[min_loss_index],
+            "time_s": result.time_s,
+            "elevation_deg": result.elevation_deg,
+            "slant_range_km": result.slant_range_km,
+            "transmittance": result.transmittance,
+            "loss_db": result.loss_db,
+            "secure_key_rate_per_pulse": result.secure_key_rate_per_pulse,
+            "effective_werner_p": result.effective_werner_p,
+            "fidelity": result.fidelity,
+            "min_loss_db": result.min_loss_db,
+            "min_loss_time_s": result.time_s[result.min_loss_index],
+            "min_loss_elevation_deg": result.elevation_deg[result.min_loss_index],
+            "min_loss_slant_range_km": result.slant_range_km[result.min_loss_index],
+            "secure_key_yield_bits": result.secure_key_yield_bits,
+            "mean_fidelity": result.mean_fidelity,
+        },
+        "provenance": result.provenance,
+        "run_metadata": {
+            "generator": "run.py",
+            "pipeline": "mission.simulate_pass",
+            "physics_mode": "computed",
         },
     }
 

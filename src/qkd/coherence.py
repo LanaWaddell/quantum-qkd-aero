@@ -99,6 +99,8 @@ def effective_werner_p(
         coincidence_window_s,
         local_singles_rate_hz=local_singles_rate_hz,
     )
+    if background_rate == 0.0:
+        return werner_p_source
 
     total_rate_hz = signal_rate_hz + background_rate
     if total_rate_hz == 0.0:

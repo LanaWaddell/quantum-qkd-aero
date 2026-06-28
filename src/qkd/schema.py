@@ -17,7 +17,7 @@ class SchemaValidationError(ValueError):
 
 
 V1_REQUIRED_KEYS = {
-    "teleportation": {"frames", "average_fidelity", "classical_limit", "remaining_entangled_resource_kb", "plot"},
+    "teleportation": {"frames", "average_fidelity", "classical_limit", "plot"},
     "summary": {"headline_key_yield", "headline_fidelity"},
 }
 
