@@ -1,7 +1,7 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
 > **REVISION 5 — updated 2026-06-27.** This revision records completion of
-> PR-Fibre-1, committed with this change (hash: pending). The dedicated-fibre
+> PR-Fibre-1, committed with this change (d004c25). The dedicated-fibre
 > front-end is now the first substitution test of the `ChannelState.transmittance`
 > representation contract. Historical corrections and superseded counts/statuses
 > are preserved in the Correction Log rather than repeated as current body facts.
@@ -61,7 +61,7 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **2B-6a** | **Restore Single Authoritative Pipeline (retire legacy decorative path)** | ✅ committed |
 | **2B-6b** | **Honest pass composition (mission.py, yield integral, fidelity arch, run.py→I/O)** | ✅ committed |
 | **2B-6c** | **Provenance hardening (enforcement, consistency, boundaries)** | ✅ implemented in current repo |
-| **PR-Fibre-1** | **Dedicated-fibre front-end contract validation** | ✅ committed with this change (hash: pending) |
+| **PR-Fibre-1** | **Dedicated-fibre front-end contract validation** | ✅ committed with this change (d004c25) |
 
 **Test suite (current Rev-5 count):** with the qiskit extra available, the suite is
 **125 passed** (`qkd_env/bin/python -m pytest -v`). The base suite excluding
@@ -407,7 +407,7 @@ file (not a remembered version) before editing; enumerate entry points / artifac
 ## Correction Log
 
 - **2026-06-27 (Rev 5).** Reconciled the record for PR-Fibre-1, committed with this
-  change (hash: pending). This revision adds the dedicated-fibre front-end as the first
+  change (d004c25). This revision adds the dedicated-fibre front-end as the first
   substitution test of the `ChannelState.transmittance` representation contract:
   `src/qkd/fibre.py` computes fibre loss, emits geometry-free `ChannelState` objects,
   and leaves downstream BB84/coherence/teleportation/signals/mission/run/schema modules
