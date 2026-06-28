@@ -72,6 +72,15 @@ counts, and timing; those belong to `DetectorParams`. End-to-end detection
 efficiency is composed only at the point of use as
 `transmittance * detector.detection_efficiency`.
 
+The dedicated-fibre front-end is the first substitution test of this contract.
+It computes transmittance from fibre attenuation and fixed insertion/coupling
+loss, then emits the same `ChannelState` consumed by BB84, coherence, and
+teleportation. `DetectorParams` is reused unchanged. Fibre links leave orbital
+geometry fields unset (`None`) rather than fabricating slant range or elevation.
+The current fibre model assumes a dark/dedicated link; Raman scattering from
+classical DWDM co-propagation is the deferred fibre analog of background-light
+contamination, not part of the static single-link contract test.
+
 The pulse repetition rate `f_rep` is a hardware-layer parameter, not a physical
 constant. Phase 2B-6b uses the illustrative fixed value
 `PULSE_REPETITION_RATE_HZ = 1.0e8` in `mission.py`. It is representative but not

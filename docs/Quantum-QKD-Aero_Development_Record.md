@@ -1,34 +1,10 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
-> **REVISION 4 — updated 2026-06-27.** This revision records completion of
-> PR2 / Phase 2B-6c in the current repository state. Provenance is now enforced,
-> not merely emitted: `run.py` validates provenance before writing
-> `outputs/results.json`; `src/qkd/provenance.py` rejects missing, phantom,
-> unknown, and reserved tags; and the output now includes a v1-compatible
-> `mission` data section carrying illustrative inputs with leaf-level provenance.
-> PR2 did **not** switch to v2.0 schema emission, did **not** add trust/coherence
-> scoring, and did **not** implement a dependency-graph field such as
-> `depends_on_illustrative`.
->
-> **REVISION 3 — updated 2026-06-27.** This revision records completion of
-> PR0 / Phase 2B-6a and PR1 / Phase 2B-6b. The single-authoritative-pipeline
-> invariant is now implemented: `run.py` is the sole production writer of
-> `outputs/results.json`. The honest pass composition now lives in `mission.py`;
-> `run.py` is I/O/plotting only; the `5.00 Kb` placeholder and
-> `remaining_entangled_resource_kb` output key are retired; v1 output remains
-> recognized; and provenance/run metadata are emitted from birth. At Rev 3,
-> PR2 / 2B-6c remained planned for provenance hardening; Rev 4 supersedes that
-> status.
->
-> **REVISION 2 — corrected 2026-06-27.** This supersedes Revision 1. Revision 1
-> contained a load-bearing error: it stated the original decorative quantities were
-> "now gone or grounded." They were gone from the `run.py` pipeline but **still present
-> and live in a second execution path** (`qkd_model.py` → `TeleportationMission` →
-> `fidelity_noise`) that wrote the *same* `outputs/results.json`. This was found by
-> reconciling the planned 2B-6 work against the actual repo files. The correction and
-> its consequences are recorded in §0, §3, §4, and the Correction Log at the end. Treat
-> this document as an architectural source: if it is wrong, downstream work inherits the
-> error — which is exactly what nearly happened here.
+> **REVISION 5 — updated 2026-06-27.** This revision records completion of
+> PR-Fibre-1, committed with this change (hash: pending). The dedicated-fibre
+> front-end is now the first substitution test of the `ChannelState.transmittance`
+> representation contract. Historical corrections and superseded counts/statuses
+> are preserved in the Correction Log rather than repeated as current body facts.
 
 **Scope of this document:** a phase-by-phase record of the Phase 2B physics build —
 what was implemented, how it was verified, the honesty guards in place, the file
@@ -56,33 +32,13 @@ The original decorative quantity was the teleportation fidelity curve
 linear "entangled resource" countdown (`15.0 → 5.0 Kb` by subtracting 0.01/frame).
 A semi-decorative third (an interpolated orbit) was also found and replaced.
 
-**Correction (Rev 2):** these decorative quantities were removed *from the `run.py`
-pipeline* during 2B-3, but were **not removed from the codebase.** They remained live
-in the original prototype path — `qkd_model.py` (repo root) driving
-`TeleportationMission.run_teleportation()` (the `0.85 + sin(f/50)*0.05` curve and the
-`-= 0.01` countdown) via `build_teleportation_results`, calling `fidelity_noise` — and
-that path **wrote the same `outputs/results.json` that `run.py` writes.** So there were
-**two competing producers of one production artifact**, and "whichever ran last wins the
-dashboard." This is the deeper issue: until exactly one authoritative pipeline writes
-each artifact, the project cannot honestly claim "computed, not decorative," because two
-different programs can generate the same output. These symbols date to the **initial
-commit `2924673` (2026-04-06)** and predate the 2B refactor. They were retired in
-**PR0 / Phase 2B-6a** ("Restore Single Authoritative Pipeline"), which established the
-durable invariant: *exactly one authoritative production pipeline per artifact; any
-historical/experimental pipeline must write separate outputs and never overwrite a
-production artifact.*
-
-**Rev 3 update:** PR1 / 2B-6b then restored the quantity-level ownership invariant.
-`mission.py` is now the single composition point for the pass; it integrates per-pulse
-decoy secure-key rate over the satellite opportunity, computes per-sample effective
-Werner quality and fidelity, and emits provenance tags. `run.py` now only plots,
-formats, and writes artifacts from that composed result.
-
-**Rev 4 update:** PR2 / 2B-6c closed the provenance gap left by PR1. The emitted
-v1-compatible payload now includes a real `mission` section for illustrative inputs,
-and `run.py` validates the complete data/provenance contract before writing JSON. The
-decorative-path correction from Rev 2 still stands; PR2 did not reintroduce any second
-writer or alternate artifact pipeline.
+The durable invariant is now twofold: exactly one authoritative production pipeline
+writes each generated artifact, and each physical quantity has one owning layer. The
+current pipeline composes geometry/orbit, channel transmittance, decoy BB84, background
+coherence, teleportation fidelity, and provenance-enforced v1 emission without a second
+writer. PR-Fibre-1 extends that discipline sideways: a fibre front-end computes the same
+`ChannelState.transmittance` representation by a different physical model, and the
+existing downstream physics stack consumes it unchanged.
 
 The discipline throughout otherwise holds: if a quantity isn't checked against a
 known-true value or a structural invariant, it isn't trusted — and verification
@@ -105,27 +61,24 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **2B-6a** | **Restore Single Authoritative Pipeline (retire legacy decorative path)** | ✅ committed |
 | **2B-6b** | **Honest pass composition (mission.py, yield integral, fidelity arch, run.py→I/O)** | ✅ committed |
 | **2B-6c** | **Provenance hardening (enforcement, consistency, boundaries)** | ✅ implemented in current repo |
+| **PR-Fibre-1** | **Dedicated-fibre front-end contract validation** | ✅ committed with this change (hash: pending) |
 
-**Test suite (current Rev-4 count):** with qiskit installed, the suite is
-**115 passed**. The base suite excluding Qiskit-specific tests is **94 passed**; on an
-environment without qiskit, the expected/count-equivalent result is **94 passed,
-1 skipped** because `tests/test_teleportation_qiskit.py` uses a module-level
-`pytest.importorskip("qiskit")`. PR1 added 12 non-qiskit tests; PR2 added 11 more
-non-qiskit provenance/contract tests. Historical count: Rev 2 corrected the pre-PR0
-baseline to 74 base / 95 with qiskit; after PR0 it was 71 base / 92 with qiskit; after
-PR1 it was 83 base / 104 with qiskit.
+**Test suite (current Rev-5 count):** with the qiskit extra available, the suite is
+**125 passed** (`qkd_env/bin/python -m pytest -v`). The base suite excluding
+Qiskit-specific tests is **104 passed**
+(`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`).
+Delta from Rev 4: **+10 collected tests** from `tests/test_fibre.py`. The Phase A plan
+described seven logical fibre tests; the collected delta is +10 because the invalid-input
+case is parametrized across three inputs. This is expected and recorded here rather than
+hidden.
 
-`python src/qkd/run.py` prints `Min loss 27.7 dB | Fidelity 0.990` (verified). The output
-now includes an honest integrated key-yield headline (currently `1282.24 Kb` under the
-illustrative defaults), a v1-recognized schema, `run_metadata`, a `provenance` block, and
-the `mission` illustrative-input section. The stale root `results.json` is gone;
-`outputs/results.json` remains the production artifact.
+`python src/qkd/run.py` still prints `Min loss 27.7 dB | Fidelity 0.990` (verified).
 
 ---
 
 ## 2. Phase-by-phase detail
 
-*(Verified accurate at Rev 4 against the repo; earlier historical notes are retained
+*(Verified accurate at Rev 5 against the repo; earlier historical notes are retained
 where they explain how the system evolved.)*
 
 ### 2B-1a — Computed teleportation fidelity & CHSH
@@ -169,7 +122,7 @@ optional `[qiskit]` extra in `pyproject.toml`.
 - **werner_p is SPECIFIED, not weather-derived.** Honesty guard: turbulence changes η
   but NOT werner_p.
 - Parameters illustrative, not calibrated. η is realistically tiny (~1e-3 to 1e-4).
-- **Contract note (Rev 3):** `ChannelState.transmittance` excludes receiver detector QE
+- **Contract note:** `ChannelState.transmittance` excludes receiver detector QE
   (owned by `DetectorParams.detection_efficiency`); both `run_decoy_bb84` and
   `coherence.signal_coincidence_rate` multiply the two. PR1 ratified this in
   `docs/INTERFACES.md`, documented `system_efficiency` as transmit/optics/coupling up to
@@ -181,12 +134,12 @@ optional `[qiskit]` extra in `pyproject.toml`.
 
 - Historical 2B-3 state: `run.py` drove a satellite pass → per-sample `channel_state()` →
   η → loss in dB, with computed `teleportation_fidelity(werner_p)` as a flat reference.
-  `fidelity_noise` stopped being called by `run.py` here. **(Rev-2 correction: before
-  PR0 it was still called by `qkd_model.py`; see §0.)**
+  `fidelity_noise` stopped being called by `run.py` here; the later discovery of a
+  second legacy writer is recorded in the Correction Log.
 - Loss reported as positive-magnitude dB; "min loss" = closest approach.
 - `results.json` keeps v1 schema keys valid and adds a `pass_profile` block.
-- **Rev 3:** PR1 moved this pass composition out of `run.py` and into `mission.py`.
-  The `remaining_entangled_resource_kb` / `5.00 Kb` placeholder has been retired; honest
+- PR1 moved this pass composition out of `run.py` and into `mission.py`. The
+  `remaining_entangled_resource_kb` / `5.00 Kb` placeholder has been retired; honest
   yield is now an integral of per-pulse SKR over the pass.
 
 ### 2B-3 orbit hardening — derived geometry
@@ -218,7 +171,7 @@ optional `[qiskit]` extra in `pyproject.toml`.
   PNS can't match on a low-loss channel).
 - **Signatures EMERGE:** QBER-invisibility from forwarded photons carrying only intrinsic
   error; the decoy anomaly from multi-photon favoritism distorting the gain ratio.
-- **Verified thesis result (reproduced at Rev 2):**
+- **Verified thesis result:**
   `honest qber=0.0150 anomaly=0.000 skr=0.0197` ·
   `null qber=0.0150 anomaly≈0 skr=0.0197` ·
   `pns qber=0.0150 anomaly=0.966 skr=0.000` ·
@@ -281,8 +234,8 @@ optional `[qiskit]` extra in `pyproject.toml`.
 - `src/qkd/provenance.py` declares in-use tags (`ANALYTIC`, `SIMULATED`, `DERIVED`,
   `ILLUSTRATIVE`) and reserved tags (`MEASURED`, `ESTIMATED`, `VALIDATED`). At PR1 it
   emitted field-level tags for `summary`, `teleportation`, and pass-profile quantities,
-  but did not enforce bidirectional coverage. Rev 4 correction: PR2 now enforces
-  structural coverage and tag validity; see 2B-6c below.
+  but did not enforce bidirectional coverage. PR2 now enforces structural coverage and
+  tag validity; see 2B-6c below.
 - Tests added: 10 mission/composition tests and 2 provenance tests. Guards include the
   yield integral, honest-zero yield, detector QE composed exactly once, day arch,
   night-flat B=0 control, v1 schema/dead-key removal, provenance completeness,
@@ -325,19 +278,51 @@ optional `[qiskit]` extra in `pyproject.toml`.
   mission constants, exact `2/3` analytic classical bound, simulated arrays changing
   with pass geometry, derived-value recomputation, and provenance determinism.
 
+### PR-Fibre-1 — Dedicated-fibre front-end contract validation
+**Files:** `src/qkd/fibre.py`, `tests/test_fibre.py`, `docs/INTERFACES.md`.
+
+- `src/qkd/fibre.py` is a second channel front-end, parallel to atmospheric
+  `channel.py`, created to validate the `ChannelState.transmittance` representation
+  contract. It introduces no downstream protocol changes.
+- `DEFAULT_FIBRE` contains illustrative, representative parameters:
+  `attenuation_db_km = 0.2`, `fixed_loss_db = 6.0`, `intrinsic_qber = 0.015`,
+  `dark_count_prob = 1.0e-6`, and `werner_p = 0.98`. These are not calibrated
+  deployment data.
+- `fibre_transmittance(length_km, attenuation_db_km, fixed_loss_db)` computes
+  `η = 10^(-(attenuation_db_km * length_km + fixed_loss_db) / 10)` and rejects
+  negative lengths or losses before applying a defensive `[0, 1]` numerical clamp.
+- `fibre_channel_state(length_km, fibre=None, *, eta_override=None, p_override=None)`
+  emits a `ChannelState` with the computed fibre transmittance, source/resource
+  `werner_p`, intrinsic QBER, and dark-count probability. The override paths set
+  `transmittance` and `werner_p` exactly for valid values.
+- Fibre `ChannelState` leaves `slant_range_km` and `elevation_deg` as `None`. Fibre
+  length is not stuffed into orbital geometry fields.
+- The existing `run_decoy_bb84`, coherence, and teleportation functions consume the
+  fibre `ChannelState` unchanged. `bb84.py`, `coherence.py`, `teleportation.py`,
+  `signals.py`, `mission.py`, `run.py`, and `schema.py` are untouched by this change.
+- The model assumes dark/dedicated fibre. Raman scattering from classical DWDM
+  co-propagation, PMD/birefringence depolarization, fibre length sweeps,
+  `simulate_link`, schema changes, and emitted fibre artifacts are explicitly deferred.
+- Tests added: 10 collected tests covering the standard fibre loss law at `0`, `10`,
+  and `50 km`; monotonic bounded transmittance; invalid input rejection; geometry-free
+  `ChannelState`; override parity; BB84 secure-key-rate ordering in a positive-SKR
+  regime with a separate zero-floor assertion; exact dark-fibre
+  `p_eff == p_source` to `1e-9`; and the same BB84 protocol accepting both atmospheric
+  and fibre `ChannelState` inputs.
+
 ---
 
 ## 3. Module & contract inventory
 
 `src/qkd/`: `teleportation.py`, `chsh.py`, `channel.py`, `orbit.py`, `bb84.py`,
-`eve.py`, `coherence.py`, `signals.py` (dataclasses: `ChannelState`,
+`eve.py`, `coherence.py`, `fibre.py`, `signals.py` (dataclasses: `ChannelState`,
 `DetectorParams`, `PhysicsSignals` — no trust field, by design), `mission.py`
 (single pass-composition layer), `provenance.py` (observational field-origin tags plus
 the v1 data/provenance structural validator), `run.py` (I/O and plotting only, with a
 pre-write provenance validation call), and `schema.py` (v1/v2 recognizer; v1 no longer
 requires `remaining_entangled_resource_kb`).
 
-**Legacy decorative path (Rev 3 — retired in PR0/2B-6a):**
+**Legacy decorative path — retired in PR0/2B-6a:**
 - `qkd_model.py` (repo root) — second entry point; deleted in PR0.
 - `teleportation.py::TeleportationMission`, `teleportation.py::build_teleportation_results`,
   `channel.py::fidelity_noise` — the decorative curve, countdown, and noise; removed in PR0.
@@ -362,7 +347,8 @@ top-level `teleportation`, `summary`, `pass_profile`, `mission`, `provenance`, a
 `classical_limit`, and `plot`; it no longer contains `remaining_entangled_resource_kb`.
 The `mission` section contains illustrative inputs (`pulse_repetition_rate_hz`,
 `intensities`, `detector`, `sky_condition`) and is covered by leaf-level
-`ILLUSTRATIVE` provenance.
+`ILLUSTRATIVE` provenance. PR-Fibre-1 does not change `outputs/results.json`, `run.py`,
+schema recognition, or dashboard-visible artifacts.
 
 ---
 
@@ -383,10 +369,18 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
    v1 data leaves, rejects missing/extra/unknown/reserved tags, and is called by `run.py`
    before JSON emission. PR2 deliberately deferred dependency-graph metadata such as
    `depends_on_illustrative` and did not change physics values.
-4. **Next active technical milestone — schema hardening / v2 emission, if continuing the
+4. **PR-Fibre-1 — Fibre channel front-end contract validation: complete.** A static
+   dedicated-fibre channel function now emits the same `ChannelState` contract as the
+   atmospheric/orbital front-end. Existing BB84, coherence, and teleportation modules
+   consume it unchanged. No length sweep, `simulate_link`, schema change, Raman model, or
+   dashboard path is included.
+5. **Next active technical milestone — schema hardening / v2 emission, if continuing the
    hardening track.** `docs/SCHEMA_HARDENING_2B.md` remains the guide for L2 types,
    L3 ranges, L4 constants, L5 consistency, and the eventual v2.0 output flip. Do this
    as its own PR; do not half-switch v1 and v2.
+6. **Next fibre-track milestone — link composition / length sweep, if continuing the
+   fibre path.** That later packet should introduce any `simulate_link` or emitted fibre
+   artifact deliberately rather than expanding PR-Fibre-1 retroactively.
 
 **Further out (updated):** Phase 2C broader mission orchestration grows from the
 `simulate_pass` composition layer rather than inventing a second composition point.
@@ -404,14 +398,24 @@ provenance validator, were v1-compatible, additive/contained changes, not the v2
 Do not half-switch.
 
 **If picking up fresh:** read this + `docs/INTERFACES.md` + `docs/PHASE_2B6_SEQUENCE.md`;
-run `pytest -v` to confirm the baseline (**94 passed, 1 skipped** without qiskit;
-**115 passed** with qiskit); reconcile any module against the actual repo file (not a
-remembered version) before editing; enumerate entry points / artifact writers /
-consumers first.
+run the validation commands listed in §1; reconcile any module against the actual repo
+file (not a remembered version) before editing; enumerate entry points / artifact writers
+/ consumers first.
 
 ---
 
 ## Correction Log
+
+- **2026-06-27 (Rev 5).** Reconciled the record for PR-Fibre-1, committed with this
+  change (hash: pending). This revision adds the dedicated-fibre front-end as the first
+  substitution test of the `ChannelState.transmittance` representation contract:
+  `src/qkd/fibre.py` computes fibre loss, emits geometry-free `ChannelState` objects,
+  and leaves downstream BB84/coherence/teleportation/signals/mission/run/schema modules
+  unchanged. Current suite count from real validation: 104 passed with
+  `--ignore=tests/test_teleportation_qiskit.py`; 125 passed with the qiskit extra
+  available. Delta from Rev 4 is +10 collected tests. The Phase A plan described seven
+  logical fibre tests; the actual delta is +10 because the negative-input test is
+  parametrized across three inputs. Output shape remains v1 and unchanged by fibre.
 
 - **2026-06-27 (Rev 4).** Reconciled the record after PR2 / 2B-6c provenance
   hardening. The previous Rev 3 statements that PR2 was "planned" or "next" are now
