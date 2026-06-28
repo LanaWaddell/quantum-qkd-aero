@@ -15,6 +15,16 @@ def test_schema_validator_accepts_current_v1_output_shape():
             "headline_key_yield": "5.00 Kb",
             "headline_fidelity": "0.851",
         },
+        "mission": {
+            "pulse_repetition_rate_hz": 100000000.0,
+            "intensities": {"signal": 0.5, "decoy": 0.1, "vacuum": 0.0},
+            "detector": {
+                "detection_efficiency": 0.5,
+                "dark_count_prob": 0.000001,
+                "error_correction_efficiency": 1.16,
+            },
+            "sky_condition": "night",
+        },
         "provenance": {
             "teleportation.frames": "DERIVED",
             "teleportation.average_fidelity": "DERIVED",
@@ -22,6 +32,14 @@ def test_schema_validator_accepts_current_v1_output_shape():
             "teleportation.plot": "DERIVED",
             "summary.headline_key_yield": "DERIVED",
             "summary.headline_fidelity": "DERIVED",
+            "mission.pulse_repetition_rate_hz": "ILLUSTRATIVE",
+            "mission.intensities.signal": "ILLUSTRATIVE",
+            "mission.intensities.decoy": "ILLUSTRATIVE",
+            "mission.intensities.vacuum": "ILLUSTRATIVE",
+            "mission.detector.detection_efficiency": "ILLUSTRATIVE",
+            "mission.detector.dark_count_prob": "ILLUSTRATIVE",
+            "mission.detector.error_correction_efficiency": "ILLUSTRATIVE",
+            "mission.sky_condition": "ILLUSTRATIVE",
         },
         "run_metadata": {
             "generator": "run.py",

@@ -11,7 +11,8 @@ from qkd.mission import (
     PULSE_REPETITION_RATE_HZ,
     simulate_pass,
 )
-from qkd.provenance import Provenance
+from qkd.provenance import Provenance, validate_provenance
+from qkd.run import _build_results
 from qkd.schema import detect_results_schema
 from qkd.signals import ChannelState, DetectorParams, PhysicsSignals
 from qkd.teleportation import teleportation_fidelity
@@ -85,27 +86,12 @@ def test_default_headline_values_remain_computed_and_stable():
 
 def test_v1_results_shape_drops_dead_key_and_accepts_metadata():
     result = simulate_pass(MissionConfig(samples=11))
-    payload = {
-        "teleportation": {
-            "frames": len(result.time_s),
-            "average_fidelity": round(result.mean_fidelity, 3),
-            "classical_limit": result.classical_bound,
-            "plot": "outputs/qkd_teleportation.png",
-        },
-        "summary": {
-            "headline_key_yield": f"{result.secure_key_yield_bits / 1_000.0:.2f} Kb",
-            "headline_fidelity": f"{result.mean_fidelity:.3f}",
-        },
-        "provenance": result.provenance,
-        "run_metadata": {
-            "generator": "run.py",
-            "pipeline": "mission.simulate_pass",
-            "physics_mode": "computed",
-        },
-    }
+    payload = _build_results(result, plot_path="outputs/qkd_teleportation.png")
 
     assert "remaining_entangled_resource_kb" not in payload["teleportation"]
+    assert payload["mission"] == result.mission
     assert detect_results_schema(payload) == "1"
+    assert validate_provenance(payload, payload["provenance"]) is True
 
 
 def test_provenance_complete_for_summary_and_teleportation_fields():

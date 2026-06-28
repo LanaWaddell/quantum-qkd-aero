@@ -1,13 +1,24 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
+> **REVISION 4 — updated 2026-06-27.** This revision records completion of
+> PR2 / Phase 2B-6c in the current repository state. Provenance is now enforced,
+> not merely emitted: `run.py` validates provenance before writing
+> `outputs/results.json`; `src/qkd/provenance.py` rejects missing, phantom,
+> unknown, and reserved tags; and the output now includes a v1-compatible
+> `mission` data section carrying illustrative inputs with leaf-level provenance.
+> PR2 did **not** switch to v2.0 schema emission, did **not** add trust/coherence
+> scoring, and did **not** implement a dependency-graph field such as
+> `depends_on_illustrative`.
+>
 > **REVISION 3 — updated 2026-06-27.** This revision records completion of
 > PR0 / Phase 2B-6a and PR1 / Phase 2B-6b. The single-authoritative-pipeline
 > invariant is now implemented: `run.py` is the sole production writer of
 > `outputs/results.json`. The honest pass composition now lives in `mission.py`;
 > `run.py` is I/O/plotting only; the `5.00 Kb` placeholder and
 > `remaining_entangled_resource_kb` output key are retired; v1 output remains
-> recognized; and provenance/run metadata are emitted from birth. PR2 / 2B-6c
-> remains planned for provenance hardening.
+> recognized; and provenance/run metadata are emitted from birth. At Rev 3,
+> PR2 / 2B-6c remained planned for provenance hardening; Rev 4 supersedes that
+> status.
 >
 > **REVISION 2 — corrected 2026-06-27.** This supersedes Revision 1. Revision 1
 > contained a load-bearing error: it stated the original decorative quantities were
@@ -67,6 +78,12 @@ decoy secure-key rate over the satellite opportunity, computes per-sample effect
 Werner quality and fidelity, and emits provenance tags. `run.py` now only plots,
 formats, and writes artifacts from that composed result.
 
+**Rev 4 update:** PR2 / 2B-6c closed the provenance gap left by PR1. The emitted
+v1-compatible payload now includes a real `mission` section for illustrative inputs,
+and `run.py` validates the complete data/provenance contract before writing JSON. The
+decorative-path correction from Rev 2 still stands; PR2 did not reintroduce any second
+writer or alternate artifact pipeline.
+
 The discipline throughout otherwise holds: if a quantity isn't checked against a
 known-true value or a structural invariant, it isn't trusted — and verification
 repeatedly caught real errors (including several of Claude's own, and this one).
@@ -87,27 +104,28 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | 2B-5  | Background light → effective werner_p (fidelity arch) | ✅ committed |
 | **2B-6a** | **Restore Single Authoritative Pipeline (retire legacy decorative path)** | ✅ committed |
 | **2B-6b** | **Honest pass composition (mission.py, yield integral, fidelity arch, run.py→I/O)** | ✅ committed |
-| **2B-6c** | **Provenance hardening (enforcement, consistency, boundaries)** | **planned (PR2)** |
+| **2B-6c** | **Provenance hardening (enforcement, consistency, boundaries)** | ✅ implemented in current repo |
 
-**Test suite (current Rev-3 count):** after PR1, the baseline without the qiskit extra is
-**83 passed, 1 skipped**. With qiskit installed, the suite is **104 passed** (83 base
-tests + 21 qiskit parametrized tests). The single skip without qiskit is the module-level
-`pytest.importorskip("qiskit")` in `tests/test_teleportation_qiskit.py`. PR1 added 12
-non-qiskit tests: 10 mission/composition tests and 2 provenance tests. Historical count:
-Rev 2 corrected the pre-PR0 baseline to 74 base / 95 with qiskit; after PR0 it was
-71 base / 92 with qiskit.
+**Test suite (current Rev-4 count):** with qiskit installed, the suite is
+**115 passed**. The base suite excluding Qiskit-specific tests is **94 passed**; on an
+environment without qiskit, the expected/count-equivalent result is **94 passed,
+1 skipped** because `tests/test_teleportation_qiskit.py` uses a module-level
+`pytest.importorskip("qiskit")`. PR1 added 12 non-qiskit tests; PR2 added 11 more
+non-qiskit provenance/contract tests. Historical count: Rev 2 corrected the pre-PR0
+baseline to 74 base / 95 with qiskit; after PR0 it was 71 base / 92 with qiskit; after
+PR1 it was 83 base / 104 with qiskit.
 
 `python src/qkd/run.py` prints `Min loss 27.7 dB | Fidelity 0.990` (verified). The output
 now includes an honest integrated key-yield headline (currently `1282.24 Kb` under the
-illustrative defaults), a v1-recognized schema, `run_metadata`, and a `provenance` block.
-The stale root `results.json` is gone; `outputs/results.json` remains the production
-artifact.
+illustrative defaults), a v1-recognized schema, `run_metadata`, a `provenance` block, and
+the `mission` illustrative-input section. The stale root `results.json` is gone;
+`outputs/results.json` remains the production artifact.
 
 ---
 
 ## 2. Phase-by-phase detail
 
-*(Verified accurate at Rev 3 against the repo; earlier historical notes are retained
+*(Verified accurate at Rev 4 against the repo; earlier historical notes are retained
 where they explain how the system evolved.)*
 
 ### 2B-1a — Computed teleportation fidelity & CHSH
@@ -261,13 +279,51 @@ optional `[qiskit]` extra in `pyproject.toml`.
 - `run_metadata` is emitted deterministically:
   `{generator: "run.py", pipeline: "mission.simulate_pass", physics_mode: "computed"}`.
 - `src/qkd/provenance.py` declares in-use tags (`ANALYTIC`, `SIMULATED`, `DERIVED`,
-  `ILLUSTRATIVE`) and reserved tags (`MEASURED`, `ESTIMATED`, `VALIDATED`). PR1 emits
-  field-level tags for `summary`, `teleportation`, and pass-profile quantities, but does
-  not implement PR2 hardening such as transitive DERIVED consistency.
+  `ILLUSTRATIVE`) and reserved tags (`MEASURED`, `ESTIMATED`, `VALIDATED`). At PR1 it
+  emitted field-level tags for `summary`, `teleportation`, and pass-profile quantities,
+  but did not enforce bidirectional coverage. Rev 4 correction: PR2 now enforces
+  structural coverage and tag validity; see 2B-6c below.
 - Tests added: 10 mission/composition tests and 2 provenance tests. Guards include the
   yield integral, honest-zero yield, detector QE composed exactly once, day arch,
   night-flat B=0 control, v1 schema/dead-key removal, provenance completeness,
   `run.py` delegation, and unchanged `signals.py` dataclasses.
+
+### 2B-6c — Provenance hardening
+**Files:** `src/qkd/provenance.py`, `src/qkd/mission.py`, `src/qkd/run.py`,
+`docs/INTERFACES.md`, `tests/test_provenance.py`, `tests/test_mission.py`,
+`tests/test_schema.py`.
+
+- `docs/INTERFACES.md` now states the Provenance Invariant: provenance observes; it
+  never causes. Tags describe emitted values and must not select algorithms, alter
+  numerical values, influence simulation state, or become physics inputs.
+- `src/qkd/provenance.py` now provides `validate_provenance(emitted, provenance_map)`.
+  It is a pure structural validator: no I/O, no mutation, no physics decisions.
+- Validation scope is intentionally v1 data-only: `teleportation`, `summary`,
+  `pass_profile`, and `mission`. Metadata blocks (`provenance`, `run_metadata`) are
+  excluded.
+- Taggable leaf rule: mappings recurse; any non-mapping value is a leaf. Arrays/lists/
+  tuples are treated as single leaves, so whole pass arrays such as
+  `pass_profile.loss_db` keep one provenance tag rather than per-index tags.
+- The validator rejects missing tags, extra/phantom tags, unknown tags, and reserved
+  tags (`MEASURED`, `ESTIMATED`, `VALIDATED`). It does **not** implement a full
+  dependency graph or `depends_on_illustrative`; those remain deferred.
+- `run.py` calls `validate_provenance(results, results["provenance"])` after composing
+  the payload and before writing `outputs/results.json`.
+- The emitted v1 payload now includes a `mission` section carrying the illustrative
+  inputs that were already used by the composition layer:
+  `pulse_repetition_rate_hz`, `intensities`, `detector`, and `sky_condition`.
+- Mission provenance is leaf-level, not parent-container-level. Current mission leaves:
+  `mission.pulse_repetition_rate_hz`, `mission.intensities.signal`,
+  `mission.intensities.decoy`, `mission.intensities.vacuum`,
+  `mission.detector.detection_efficiency`, `mission.detector.dark_count_prob`,
+  `mission.detector.error_correction_efficiency`, and `mission.sky_condition`.
+- Current emitted provenance has 28 data leaves: 4 `teleportation`, 2 `summary`,
+  14 `pass_profile`, and 8 `mission`. Bidirectional coverage now holds: every emitted
+  data leaf has a tag, and every tag points to an emitted data leaf.
+- Tests added: 11 non-qiskit tests covering validator acceptance/non-mutation, the
+  array-as-single-leaf rule, missing/extra/unknown/reserved failures, illustrative
+  mission constants, exact `2/3` analytic classical bound, simulated arrays changing
+  with pass geometry, derived-value recomputation, and provenance determinism.
 
 ---
 
@@ -276,8 +332,9 @@ optional `[qiskit]` extra in `pyproject.toml`.
 `src/qkd/`: `teleportation.py`, `chsh.py`, `channel.py`, `orbit.py`, `bb84.py`,
 `eve.py`, `coherence.py`, `signals.py` (dataclasses: `ChannelState`,
 `DetectorParams`, `PhysicsSignals` — no trust field, by design), `mission.py`
-(single pass-composition layer), `provenance.py` (observational field-origin tags),
-`run.py` (I/O and plotting only), and `schema.py` (v1/v2 recognizer; v1 no longer
+(single pass-composition layer), `provenance.py` (observational field-origin tags plus
+the v1 data/provenance structural validator), `run.py` (I/O and plotting only, with a
+pre-write provenance validation call), and `schema.py` (v1/v2 recognizer; v1 no longer
 requires `remaining_entangled_resource_kb`).
 
 **Legacy decorative path (Rev 3 — retired in PR0/2B-6a):**
@@ -291,7 +348,7 @@ requires `remaining_entangled_resource_kb`).
 
 Docs: `docs/INTERFACES.md` (canonical contract), `docs/SCHEMA_HARDENING_2B.md`,
 `docs/PHASE_2B4_DECOY_EVE.md`, `docs/PHASE_2B5_BACKGROUND_LIGHT.md`,
-`docs/PHASE_2B6_SEQUENCE.md` (PR0/PR1 completed; PR2 remains next), and
+`docs/PHASE_2B6_SEQUENCE.md` (PR0/PR1/PR2 sequence/spec history), and
 `docs/architecture/ADR-0001-single-authoritative-pipeline.md`.
 Archive: `01-Gate-Noise-Archive/` (preserved Qiskit/QEC research — do not delete).
 
@@ -300,16 +357,19 @@ NOT calibrated. The simulator models correct *relationships and behaviours*, not
 absolute performance of any real link.
 
 **Current output shape:** `outputs/results.json` remains v1-recognized and currently has
-top-level `teleportation`, `summary`, `pass_profile`, `provenance`, and `run_metadata`
-sections. `teleportation` contains `frames`, `average_fidelity`, `classical_limit`, and
-`plot`; it no longer contains `remaining_entangled_resource_kb`.
+top-level `teleportation`, `summary`, `pass_profile`, `mission`, `provenance`, and
+`run_metadata` sections. `teleportation` contains `frames`, `average_fidelity`,
+`classical_limit`, and `plot`; it no longer contains `remaining_entangled_resource_kb`.
+The `mission` section contains illustrative inputs (`pulse_repetition_rate_hz`,
+`intensities`, `detector`, `sky_condition`) and is covered by leaf-level
+`ILLUSTRATIVE` provenance.
 
 ---
 
 ## 4. What's next (precise) — corrected sequence
 
-Active spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate per PR (plan+approval,
-then implement+diffs+tests). Current state:
+Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate per PR
+(plan+approval, then implement+diffs+tests). Current state:
 
 1. **PR0 / 2B-6a — Restore Single Authoritative Pipeline: complete.** The legacy
    decorative pipeline and stale root artifact are gone. ADR-0001 records the decision.
@@ -318,11 +378,15 @@ then implement+diffs+tests). Current state:
    `run.py` is I/O only; the dead `remaining_entangled_resource_kb` key is dropped; v1
    output remains recognized; and deterministic `run_metadata` plus provenance tags are
    emitted.
-3. **PR2 / 2B-6c — Provenance hardening: next active milestone.** The enum and emitted
-   tags exist from PR1. PR2 should harden the mechanism: reserved-tag non-use
-   enforcement, DERIVED-input transitive consistency, the formal SIMULATED/DERIVED
-   boundary, and any approved `depends_on_illustrative` seed. It should not change
-   physics values.
+3. **PR2 / 2B-6c — Provenance hardening: complete in the current repo.** The enum and
+   emitted tags from PR1 are now enforced by `validate_provenance`. The validator covers
+   v1 data leaves, rejects missing/extra/unknown/reserved tags, and is called by `run.py`
+   before JSON emission. PR2 deliberately deferred dependency-graph metadata such as
+   `depends_on_illustrative` and did not change physics values.
+4. **Next active technical milestone — schema hardening / v2 emission, if continuing the
+   hardening track.** `docs/SCHEMA_HARDENING_2B.md` remains the guide for L2 types,
+   L3 ranges, L4 constants, L5 consistency, and the eventual v2.0 output flip. Do this
+   as its own PR; do not half-switch v1 and v2.
 
 **Further out (updated):** Phase 2C broader mission orchestration grows from the
 `simulate_pass` composition layer rather than inventing a second composition point.
@@ -335,18 +399,31 @@ Phase 2D.
 
 **Schema decision (standing):** v2.0 emission + L2–L5 validator hardening
 (`SCHEMA_HARDENING_2B.md`) remains its own PR. PR1's drop of the single dead v1 key and
-addition of `provenance`/`run_metadata` were v1-compatible, additive/contained changes,
-not the v2.0 flip. Do not half-switch.
+addition of `provenance`/`run_metadata`, plus PR2's additive `mission` section and
+provenance validator, were v1-compatible, additive/contained changes, not the v2.0 flip.
+Do not half-switch.
 
 **If picking up fresh:** read this + `docs/INTERFACES.md` + `docs/PHASE_2B6_SEQUENCE.md`;
-run `pytest -v` to confirm the baseline (**83 passed, 1 skipped** without qiskit;
-**104 passed** with qiskit); reconcile any module against the actual repo file (not a
+run `pytest -v` to confirm the baseline (**94 passed, 1 skipped** without qiskit;
+**115 passed** with qiskit); reconcile any module against the actual repo file (not a
 remembered version) before editing; enumerate entry points / artifact writers /
 consumers first.
 
 ---
 
 ## Correction Log
+
+- **2026-06-27 (Rev 4).** Reconciled the record after PR2 / 2B-6c provenance
+  hardening. The previous Rev 3 statements that PR2 was "planned" or "next" are now
+  superseded: `validate_provenance` exists, `run.py` calls it before writing JSON, the
+  output includes the v1-compatible `mission` data section, and the former phantom
+  `mission.*` provenance parents have been replaced with leaf-level tags. All three
+  detector parameters (`detection_efficiency`, `dark_count_prob`,
+  `error_correction_efficiency`) are emitted under `mission.detector` and tagged
+  individually. The record now distinguishes PR2's implemented structural enforcement
+  from still-deferred work: dependency-graph metadata such as
+  `depends_on_illustrative`, v2.0 emission, and L2–L5 schema hardening. Current suite
+  count: 94 base tests; 94 passed / 1 skipped without qiskit; 115 passed with qiskit.
 
 - **2026-06-27 (Rev 3).** Updated the record after PR0 / 2B-6a and PR1 / 2B-6b
   completion. PR0 retired `qkd_model.py`, `TeleportationMission`,
@@ -361,8 +438,8 @@ consumers first.
   qiskit. This revision also corrects the older shorthand that paired the Qiskit
   validation path with `qiskit-aer`: Aer may be locally installed from earlier
   experiments, but the implemented validation imports only `qiskit.quantum_info` APIs
-  and the project declares only `qiskit` in the optional extra. PR2 / 2B-6c remains
-  planned for provenance hardening.
+  and the project declares only `qiskit` in the optional extra. At Rev 3, PR2 / 2B-6c
+  remained planned for provenance hardening; that status is superseded by Rev 4.
 
 - **2026-06-27 (Rev 2).** Corrected the §0 claim that the decorative fidelity curve and
   the resource countdown were "now gone or grounded." They were gone from `run.py` but

@@ -78,6 +78,25 @@ constant. Phase 2B-6b uses the illustrative fixed value
 calibrated, and it is intentionally held fixed during future optimization so an
 optimizer cannot trivially improve yield by increasing the transmitter clock.
 
+### 1.2 Provenance invariant
+
+Provenance observes; it never causes. Provenance tags describe how emitted
+quantities were produced, but they must not select algorithms, alter numerical
+values, influence simulation state, or become physics inputs.
+
+Operational tags:
+
+- `ANALYTIC`: exact closed-form value.
+- `SIMULATED`: direct output of a physics-model call.
+- `DERIVED`: pure function of already-emitted values.
+- `ILLUSTRATIVE`: named, uncalibrated constant or scenario input.
+- `MEASURED`, `ESTIMATED`, and `VALIDATED`: reserved for later phases and not
+  applied by the current simulator.
+
+For current v1 emission, provenance is enforced over the data sections
+`teleportation`, `summary`, `pass_profile`, and `mission`. Metadata blocks such
+as `provenance` and `run_metadata` are not taggable data.
+
 ---
 
 ## 2. Dependency graph

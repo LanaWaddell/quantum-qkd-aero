@@ -21,6 +21,7 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 from qkd.mission import simulate_pass
+from qkd.provenance import validate_provenance
 
 
 def main():
@@ -71,6 +72,7 @@ def main():
     plt.close(fig)
 
     results = _build_results(result, plot_path="outputs/qkd_teleportation.png")
+    validate_provenance(results, results["provenance"])
 
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(results, f)
@@ -112,6 +114,7 @@ def _build_results(result, *, plot_path):
             "secure_key_yield_bits": result.secure_key_yield_bits,
             "mean_fidelity": result.mean_fidelity,
         },
+        "mission": result.mission,
         "provenance": result.provenance,
         "run_metadata": {
             "generator": "run.py",

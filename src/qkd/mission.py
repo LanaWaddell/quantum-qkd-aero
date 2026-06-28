@@ -69,6 +69,7 @@ class PassResult:
     classical_bound: float
     werner_p_source: float
     pulse_repetition_rate_hz: float
+    mission: dict[str, object]
     provenance: dict[str, str]
 
 
@@ -153,6 +154,7 @@ def simulate_pass(config: MissionConfig | None = None, *, eve=None) -> PassResul
         classical_bound=classical_bound,
         werner_p_source=werner_p_source,
         pulse_repetition_rate_hz=cfg.pulse_repetition_rate_hz,
+        mission=_mission_inputs(cfg),
         provenance=_default_provenance(),
     )
 
@@ -192,6 +194,19 @@ def _integrate_yield_bits(
     )
 
 
+def _mission_inputs(config: MissionConfig) -> dict[str, object]:
+    return {
+        "pulse_repetition_rate_hz": config.pulse_repetition_rate_hz,
+        "intensities": dict(config.intensities),
+        "detector": {
+            "detection_efficiency": config.detector.detection_efficiency,
+            "dark_count_prob": config.detector.dark_count_prob,
+            "error_correction_efficiency": config.detector.error_correction_efficiency,
+        },
+        "sky_condition": config.sky_condition,
+    }
+
+
 def _default_provenance() -> dict[str, str]:
     return {
         "teleportation.frames": Provenance.DERIVED.value,
@@ -215,7 +230,11 @@ def _default_provenance() -> dict[str, str]:
         "pass_profile.secure_key_yield_bits": Provenance.DERIVED.value,
         "pass_profile.mean_fidelity": Provenance.DERIVED.value,
         "mission.pulse_repetition_rate_hz": Provenance.ILLUSTRATIVE.value,
-        "mission.intensities": Provenance.ILLUSTRATIVE.value,
-        "mission.detector": Provenance.ILLUSTRATIVE.value,
+        "mission.intensities.signal": Provenance.ILLUSTRATIVE.value,
+        "mission.intensities.decoy": Provenance.ILLUSTRATIVE.value,
+        "mission.intensities.vacuum": Provenance.ILLUSTRATIVE.value,
+        "mission.detector.detection_efficiency": Provenance.ILLUSTRATIVE.value,
+        "mission.detector.dark_count_prob": Provenance.ILLUSTRATIVE.value,
+        "mission.detector.error_correction_efficiency": Provenance.ILLUSTRATIVE.value,
         "mission.sky_condition": Provenance.ILLUSTRATIVE.value,
     }
