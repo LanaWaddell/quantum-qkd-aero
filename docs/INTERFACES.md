@@ -102,9 +102,10 @@ Operational tags:
 - `MEASURED`, `ESTIMATED`, and `VALIDATED`: reserved for later phases and not
   applied by the current simulator.
 
-For current v1 emission, provenance is enforced over the data sections
-`teleportation`, `summary`, `pass_profile`, and `mission`. Metadata blocks such
-as `provenance` and `run_metadata` are not taggable data.
+For current v2 emission, provenance is enforced over emitted data sections such
+as `link`, `teleportation`, `summary`, `profile`, optional `geometry`, and
+`mission`. Metadata blocks such as `schema_version`, `provenance`, and
+`run_metadata` are not taggable data.
 
 ---
 
@@ -327,6 +328,15 @@ The v2 shape declares the concrete quantum-link design point and separates the
 independent profile axis from medium-specific context. Satellite emission uses
 `profile.axis.name = "time_s"` and includes `geometry`; a future fibre sweep can
 use `profile.axis.name = "length_km"` and omit `geometry`.
+
+PR-C makes that second case real: the dedicated-fibre length sweep is the second
+caller of `mission.simulate_profile(...)`, feeds it length-indexed
+`ChannelState` values from `fibre_channel_state(...)`, emits
+`link.medium = "fibre"`, and omits `geometry`. Its figure of merit is
+`profile.aggregates.max_secure_distance_km`, defined as the last length sample
+whose `secure_key_rate_per_pulse` is positive. The adjacent
+`secure_distance_bracket` records the last-positive and first-non-positive
+samples so the grid-resolution caveat is auditable.
 
 ```jsonc
 {

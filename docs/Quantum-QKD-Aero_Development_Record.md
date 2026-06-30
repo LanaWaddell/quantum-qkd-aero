@@ -1,13 +1,15 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
-> **REVISION 8 — updated 2026-06-30.** This revision records PR-B / the v2
-> output-schema cutover. `outputs/results.json` now emits schema `2.0` with the
-> axis-agnostic `link` / `profile` / optional `geometry` frame; the old v1
-> `pass_profile` shape and pre-fibre orbital `V2_REQUIRED_KEYS` stub are retired.
-> The dashboard, schema recognizer, provenance mirror, and regression tests now
-> target v2. Physics composition and numerical values are unchanged. Historical
-> corrections and superseded counts/statuses are preserved in the Correction Log
-> rather than repeated as current body facts.
+> **REVISION 9 — updated 2026-06-30.** This revision records PR-C / the
+> dedicated-fibre length sweep. Fibre is now the second caller of the
+> medium-neutral `mission.simulate_profile(...)` core, length-indexed under
+> `profile.axis.name = "length_km"`, emitting v2 natively with
+> `link.medium = "fibre"` and no `geometry` section. The headline fibre figure
+> of merit is `profile.aggregates.max_secure_distance_km = 190.0`, defined as
+> the last positive-SKR length sample, with the `(190 km, 195 km)` cutoff
+> bracket emitted for auditability. Historical corrections and superseded
+> counts/statuses are preserved in the Correction Log rather than repeated as
+> current body facts.
 
 **Scope of this document:** a phase-by-phase record of the Phase 2B physics build —
 what was implemented, how it was verified, the honesty guards in place, the file
@@ -45,7 +47,9 @@ existing downstream physics stack consumes it unchanged. PR-A then factored that
 downstream physics stack into a medium-neutral `simulate_profile(...)` core, so satellite
 passes are one caller of the profile composition rather than the only place it exists.
 PR-B then cut the emitted artifact over to the axis-agnostic v2 frame without changing
-the physics values behind that artifact.
+the physics values behind that artifact. PR-C adds the second caller: a dedicated-fibre
+length sweep that feeds fibre `ChannelState` values through the same core and emits a
+native v2 rate-distance artifact.
 
 The discipline throughout otherwise holds: if a quantity isn't checked against a
 known-true value or a structural invariant, it isn't trusted — and verification
@@ -70,23 +74,24 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **2B-6c** | **Provenance hardening (enforcement, consistency, boundaries)** | ✅ committed |
 | **PR-Fibre-1** | **Dedicated-fibre front-end contract validation** | ✅ committed in Rev 5 (d004c25) |
 | **PR-A** | **Medium-neutral composition core (`simulate_profile`)** | ✅ committed; robust byte-identity guard corrected |
-| **PR-B** | **v2 output schema cutover (`link` / `profile` / `geometry`)** | ✅ complete in current repo |
+| **PR-B** | **v2 output schema cutover (`link` / `profile` / `geometry`)** | ✅ committed in Rev 8 (cadab78) |
+| **PR-C** | **Fibre length sweep as second caller of `simulate_profile`** | ✅ complete |
 
-**Test suite (current Rev-8 count):** with the qiskit extra available, the suite is
-**134 passed** (`qkd_env/bin/python -m pytest -v`). The base suite excluding
-Qiskit-specific tests is **113 passed**
+**Test suite (current Rev-9 count):** with the qiskit extra available, the suite is
+**141 passed** (`qkd_env/bin/python -m pytest -v`). The base suite excluding
+Qiskit-specific tests is **120 passed**
 (`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`).
-Delta from Rev 7: **+4 collected tests**. The new tests cover v2 schema
-rejection/acceptance, retirement of the old orbital v2 stub, and full v1-to-v2
-output-parity mapping.
+Delta from Rev 8: **+7 collected tests**, all in `tests/test_fibre_sweep.py`.
 
 `python src/qkd/run.py` still prints `Min loss 27.7 dB | Fidelity 0.990` (verified).
+`python src/qkd/run_fibre.py` prints
+`Fibre Sweep Updated: Max secure distance 190.0 km | SKR@0 km 1.227e-02 bits/pulse`.
 
 ---
 
 ## 2. Phase-by-phase detail
 
-*(Verified accurate at Rev 8 against the repo; earlier historical notes are retained
+*(Verified accurate at Rev 9 against the repo; earlier historical notes are retained
 where they explain how the system evolved.)*
 
 ### 2B-1a — Computed teleportation fidelity & CHSH
@@ -375,6 +380,29 @@ optional `[qiskit]` extra in `pyproject.toml`.
   hash changed because the schema shape changed; the underlying physics and headline
   values did not.
 
+### PR-C — Fibre length sweep, second caller of the composition core
+**Files:** `src/qkd/mission.py`, `src/qkd/run_fibre.py`,
+`tests/test_fibre_sweep.py`, `docs/INTERFACES.md`, and this Development Record.
+
+- `mission.simulate_fibre_sweep(...)` now builds
+  `[fibre_channel_state(length_km) for length_km in lengths]` and feeds those
+  geometry-free `ChannelState` objects into the unmodified `simulate_profile(...)`
+  core with `axis_values = lengths_km`.
+- The default grid is `0..220 km` in `5 km` steps. Under the current illustrative
+  parameters, SKR is monotone decreasing, positive at `190 km`
+  (`2.3793151827905804e-07` bits/pulse), and floored to `0.0` at `195 km`.
+- `max_secure_distance_km` is intentionally the last positive-SKR sample (`190.0 km`),
+  not the first zero sample. The emitted `secure_distance_bracket` records the
+  last-positive and first-non-positive samples so the grid-resolution caveat is visible.
+- Fibre uses `DEFAULT_SKY_CONDITION = "night"` because the model is a dark/dedicated
+  fibre path with no sky background. `effective_werner_p` remains exactly the source
+  `werner_p` (`0.98`) across the sweep.
+- `src/qkd/run_fibre.py` is a separate artifact path. It writes
+  `outputs/fibre_results.json` and `outputs/qkd_fibre_sweep.png`; it does not add modes
+  to the satellite `run.py` path.
+- Satellite emission remains pinned by the PR-B stable hash
+  `bcac8a7024ccd114a0ef5288466ef8ab43f08964d61dada8d1cc7bdef28c8962`.
+
 ---
 
 ## 3. Module & contract inventory
@@ -382,11 +410,13 @@ optional `[qiskit]` extra in `pyproject.toml`.
 `src/qkd/`: `teleportation.py`, `chsh.py`, `channel.py`, `orbit.py`, `bb84.py`,
 `eve.py`, `coherence.py`, `fibre.py`, `signals.py` (dataclasses: `ChannelState`,
 `DetectorParams`, `PhysicsSignals` — no trust field, by design), `mission.py`
-(medium-neutral profile-composition core plus satellite pass wrapper), `provenance.py`
+(medium-neutral profile-composition core plus satellite pass wrapper and fibre sweep
+wrapper), `provenance.py`
 (observational field-origin tags plus the v2 data/provenance structural validator),
-`run.py` (I/O and plotting only, with pre-write schema and provenance validation), and
-`schema.py` (v2-only L1 recognizer; the old orbital `V2_REQUIRED_KEYS` stub is
-retired).
+`run.py` (satellite I/O and plotting only, with pre-write schema/provenance validation),
+`run_fibre.py` (fibre-sweep I/O and plotting only, with pre-write schema/provenance
+validation), and `schema.py` (v2-only L1 recognizer; the old orbital
+`V2_REQUIRED_KEYS` stub is retired).
 
 **Legacy decorative path — retired in PR0/2B-6a:**
 - `qkd_model.py` (repo root) — second entry point; deleted in PR0.
@@ -417,6 +447,13 @@ absolute performance of any real link.
 elevation/slant-range data. The `mission` section contains illustrative inputs
 (`pulse_repetition_rate_hz`, `intensities`, `detector`, `sky_condition`) and is covered
 by leaf-level `ILLUSTRATIVE` provenance.
+
+**Current fibre output shape:** `outputs/fibre_results.json` is also v2. It has
+`schema_version`, `link`, `teleportation`, `summary`, `profile`, `mission`,
+`provenance`, and `run_metadata`, but intentionally omits `geometry`. Its profile axis
+is `length_km`, and its fibre-specific aggregate
+`profile.aggregates.max_secure_distance_km` is accompanied by
+`profile.aggregates.secure_distance_bracket`.
 
 ---
 
@@ -452,9 +489,9 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
 6. **PR-B — v2 output schema cutover: complete.** `outputs/results.json` now emits the
    ADR-0002-aligned v2 frame with `link`, axis-agnostic `profile`, satellite
    `geometry`, and v2 provenance coverage. v1 and the old orbital v2 stub are retired.
-7. **Next fibre-track milestone — PR-C / link composition and length sweep, if continuing the
-   fibre path.** That later packet should introduce any `simulate_link` or emitted fibre
-   artifact deliberately rather than expanding PR-Fibre-1 retroactively.
+7. **PR-C — Fibre length sweep: complete.** `simulate_fibre_sweep` is the second caller
+   of `simulate_profile`; `run_fibre.py` emits the v2 fibre artifact; the secure
+   rate-distance curve and max-secure-distance bracket are tested.
 8. **Later hardening milestone — PR-D / L2-L5 schema hardening.**
    `docs/SCHEMA_HARDENING_2B.md` remains the guide for L2 types, L3 ranges,
    L4 constants, and L5 consistency. PR-B intentionally implements only the v2 shape
@@ -482,7 +519,20 @@ file (not a remembered version) before editing; enumerate entry points / artifac
 
 ## Correction Log
 
-- **2026-06-30 (Rev 8).** Reconciled the record for PR-B / v2 output schema
+- **2026-06-30 (Rev 9).** Reconciled the record for PR-C / Fibre Length-Sweep.
+  Fibre is now the second real caller of `mission.simulate_profile(...)`, using
+  `fibre_channel_state(...)` over a `0..220 km` / `5 km` grid and emitting a native v2
+  artifact with `link.medium = "fibre"`, `profile.axis.name = "length_km"`, and no
+  `geometry` section. The max-secure-distance headline is the last positive-SKR sample
+  (`190.0 km`), not the first zero sample (`195.0 km`); the emitted bracket preserves
+  both samples so the grid resolution is auditable. Current suite count from real
+  validation: 120 passed with `--ignore=tests/test_teleportation_qiskit.py`; 141
+  passed with the qiskit extra available. Delta from Rev 8 is +7 collected tests.
+  Satellite output remains pinned to the PR-B stable hash and
+  `python src/qkd/run.py` still prints `Dashboard Updated: Min loss 27.7 dB |
+  Fidelity 0.990`.
+
+- **2026-06-30 (Rev 8, cadab78).** Reconciled the record for PR-B / v2 output schema
   cutover. The current emitted artifact is schema `2.0` with top-level
   `schema_version`, `link`, `teleportation`, `summary`, `profile`, `geometry`,
   `mission`, `provenance`, and `run_metadata`. The old v1 `pass_profile` shape and
