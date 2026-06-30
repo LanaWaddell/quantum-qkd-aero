@@ -1,6 +1,6 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
-> **REVISION 9 — updated 2026-06-30.** This revision records PR-C / the
+> **REVISION 9 — updated 2026-06-30 (6f0527d).** This revision records PR-C / the
 > dedicated-fibre length sweep. Fibre is now the second caller of the
 > medium-neutral `mission.simulate_profile(...)` core, length-indexed under
 > `profile.axis.name = "length_km"`, emitting v2 natively with
@@ -75,7 +75,7 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **PR-Fibre-1** | **Dedicated-fibre front-end contract validation** | ✅ committed in Rev 5 (d004c25) |
 | **PR-A** | **Medium-neutral composition core (`simulate_profile`)** | ✅ committed; robust byte-identity guard corrected |
 | **PR-B** | **v2 output schema cutover (`link` / `profile` / `geometry`)** | ✅ committed in Rev 8 (cadab78) |
-| **PR-C** | **Fibre length sweep as second caller of `simulate_profile`** | ✅ complete |
+| **PR-C** | **Fibre length sweep as second caller of `simulate_profile`** | ✅ committed in Rev 9 (6f0527d) |
 
 **Test suite (current Rev-9 count):** with the qiskit extra available, the suite is
 **141 passed** (`qkd_env/bin/python -m pytest -v`). The base suite excluding
@@ -519,7 +519,7 @@ file (not a remembered version) before editing; enumerate entry points / artifac
 
 ## Correction Log
 
-- **2026-06-30 (Rev 9).** Reconciled the record for PR-C / Fibre Length-Sweep.
+- **2026-06-30 (Rev 9, 6f0527d).** Reconciled the record for PR-C / Fibre Length-Sweep.
   Fibre is now the second real caller of `mission.simulate_profile(...)`, using
   `fibre_channel_state(...)` over a `0..220 km` / `5 km` grid and emitting a native v2
   artifact with `link.medium = "fibre"`, `profile.axis.name = "length_km"`, and no

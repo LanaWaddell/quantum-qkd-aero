@@ -1,10 +1,10 @@
 # Quantum-QKD-Aero — a verified quantum-link simulator
 
 Quantum-QKD-Aero is a Python R&D sandbox for quantum key distribution and quantum
-teleportation over real-world links. It currently models two channel media —
-**satellite free-space** and **optical fibre** — sharing one verified physics core, and
-is being generalized toward a medium/topology/protocol channel model so further link
-types slot in without re-architecture.
+teleportation over real-world links. It models two channel media —
+**satellite free-space** and **optical fibre** — sharing one verified physics core and one
+medium-neutral composition layer, under a medium/topology/protocol channel model so further
+link types slot in without re-architecture.
 
 What distinguishes the project is **how** it is built, not just what it computes.
 
@@ -63,8 +63,13 @@ development record carries dated corrections rather than silently rewriting hist
   coupled, guarded by a coupling-proof test).
 - **Optical fibre** — transmittance `eta = 10^(-(a*L + fixed)/10)` (standard SMF,
   illustrative attenuation and coupling loss). Fibre flows through the **unmodified** BB84 /
-  coherence / teleportation stack — the first substitution test of the channel-representation
-  contract, validated with zero downstream physics change.
+  coherence / teleportation stack, and as the **second caller of the composition core** it
+  emits v2 natively with no schema change — validating the channel-representation contract
+  and the medium generalization with zero downstream physics change.
+- **Fibre rate–distance sweep** — secure-key-rate vs. length over the fibre, the canonical
+  QKD rate–distance curve; secure key decays monotonically and the **maximum secure
+  distance** (~190 km, default illustrative params) is reported with its grid-resolution
+  bracket so the figure of merit is auditable.
 
 **Honesty & verification infrastructure:**
 
@@ -95,27 +100,32 @@ new link plugs in. The axes are *named* now (cheap, and it prevents a flat-schem
 end); each is *built out* only when a second member earns it — the same
 anti-speculative-generality discipline applied throughout the project.
 
-## In progress / next
+## The medium-general channel layer (built & certified)
 
-The current sequence generalizes the channel layer onto this model (designed, not yet
-built — labels honest):
+The composition layer and output schema are now generalized onto the three-axis model —
+satellite and fibre both flow through **one medium-neutral composition core** and **one
+axis-agnostic v2 schema**, with the satellite output preserved byte-identically through the
+migration. The generalization was built and verified in sequence:
 
-- **Composition core** — a medium-neutral profile layer; the satellite pass becomes one
-  caller, proven output-identical before/after.
-- **v2 output schema** — a medium-general schema that names `medium`/`topology`/`protocol`
-  explicitly and represents any channel profile, replacing the satellite-only v1 format
-  (a hard cutover with full output-parity asserted, dashboard and tests migrated together).
-  The pre-fibre v2 stub is superseded by the three-axis design.
-- **Fibre length-sweep** — secure-key-rate vs. fibre length (the canonical QKD
-  rate-distance curve), with maximum secure distance as the figure of merit.
-- **Schema hardening (later)** — type/range/constant/consistency validators as a separable
-  depth layer (`docs/SCHEMA_HARDENING_2B.md`).
+- **Medium-neutral composition core** — `simulate_profile` composes an ordered sequence of
+  channel states along an *independent axis* (time for a satellite pass, length for a fibre
+  sweep). The satellite pass delegates to it, proven byte-identical before/after.
+- **Axis-agnostic v2 schema** — every result declares its `link` (medium / topology /
+  protocol) and a generic `profile.axis`; a non-orbital medium omits satellite geometry
+  entirely. A hard cutover from the satellite-only v1 format, with full output-parity
+  asserted and provenance enforcement carried through intact.
+- **Fibre length-sweep** — fibre as the *second caller* of the same core, length-indexed,
+  emitting v2 natively with **no change to the core or schema** — the concrete proof the
+  medium axis is genuinely generalized. Produces the canonical **secure-key-rate vs.
+  distance curve** with **maximum secure distance** (~190 km on the default illustrative
+  fibre) as the figure of merit.
 
-Beyond the channel layer: a **Phase 2D trust/coherence layer** reading the computed
-`PhysicsSignals` (QBER, decoy anomaly, CHSH/teleportation margins, loss, secure-key rate) -
-the physics wall holds, no trust field inside the physics modules - and
-**coherence-enhancement optimization** over the filtering levers (window, bandwidth, field
-of view) against signal loss.
+**Next / deferred:** schema hardening (L2–L5 type/range/constant/consistency validators, a
+separable robustness layer — `docs/SCHEMA_HARDENING_2B.md`); a **Phase 2D trust/coherence
+layer** reading the computed `PhysicsSignals` (QBER, decoy anomaly, CHSH/teleportation
+margins, loss, secure-key rate) from behind the physics wall — no trust field inside the
+physics modules; and **coherence-enhancement optimization** over the filtering levers
+(window, bandwidth, field of view) against signal loss.
 
 ## Horizon
 
