@@ -1,8 +1,8 @@
 """Mission-level composition for the verified Phase 2B physics modules.
 
-This module owns pass composition only: orbit -> channel -> decoy BB84 ->
-background coherence -> teleportation fidelity. It introduces no new physics and
-performs no I/O.
+This module owns composition only: channel-state profiles -> decoy BB84 ->
+background coherence -> teleportation fidelity, with satellite pass geometry as
+one caller. It introduces no new physics and performs no I/O.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from qkd.channel import channel_state
 from qkd.coherence import effective_werner_p_for_sky
 from qkd.orbit import satellite_pass
 from qkd.provenance import Provenance
-from qkd.signals import DetectorParams
+from qkd.signals import ChannelState, DetectorParams
 from qkd.teleportation import teleportation_fidelity
 
 
@@ -73,6 +73,23 @@ class PassResult:
     provenance: dict[str, str]
 
 
+@dataclass(frozen=True)
+class ProfileResult:
+    axis_values: list[float]
+    transmittance: list[float]
+    loss_db: list[float]
+    secure_key_rate_per_pulse: list[float]
+    effective_werner_p: list[float]
+    fidelity: list[float]
+    min_loss_db: float
+    min_loss_index: int
+    secure_key_yield_bits: float
+    mean_fidelity: float
+    classical_bound: float
+    werner_p_source: float
+    pulse_repetition_rate_hz: float
+
+
 def simulate_pass(config: MissionConfig | None = None, *, eve=None) -> PassResult:
     """Compose the honest pass from already-verified module functions."""
 
@@ -100,6 +117,36 @@ def simulate_pass(config: MissionConfig | None = None, *, eve=None) -> PassResul
         )
     ]
 
+    profile = simulate_profile(
+        pass_geometry.time_s,
+        channel_states,
+        intensities=cfg.intensities,
+        n_pulses=cfg.n_pulses,
+        detector=cfg.detector,
+        pulse_repetition_rate_hz=cfg.pulse_repetition_rate_hz,
+        sky_condition=cfg.sky_condition,
+    )
+
+    return _pass_result_from_profile(pass_geometry, profile, cfg)
+
+
+def simulate_profile(
+    axis_values: list[float],
+    channel_states: list[ChannelState],
+    *,
+    intensities: dict[str, float],
+    n_pulses: int,
+    detector: DetectorParams,
+    pulse_repetition_rate_hz: float,
+    sky_condition: str,
+) -> ProfileResult:
+    """Compose an honest medium-neutral channel-state profile."""
+
+    if len(axis_values) != len(channel_states):
+        raise ValueError("axis_values and channel_states must have the same length.")
+    if not channel_states:
+        raise ValueError("axis_values and channel_states must be non-empty.")
+
     werner_p_source = _single_werner_source(channel_states)
     transmittance = [state.transmittance for state in channel_states]
     loss_db = [_channel_loss_db(eta) for eta in transmittance]
@@ -109,9 +156,9 @@ def simulate_pass(config: MissionConfig | None = None, *, eve=None) -> PassResul
     bb84_results = [
         run_decoy_bb84(
             state,
-            cfg.intensities,
-            cfg.n_pulses,
-            cfg.detector,
+            intensities,
+            n_pulses,
+            detector,
             eve=None,
         )
         for state in channel_states
@@ -122,8 +169,8 @@ def simulate_pass(config: MissionConfig | None = None, *, eve=None) -> PassResul
         effective_werner_p_for_sky(
             eta,
             werner_p_source,
-            cfg.detector.detection_efficiency,
-            sky_condition=cfg.sky_condition,
+            detector.detection_efficiency,
+            sky_condition=sky_condition,
         )
         for eta in transmittance
     ]
@@ -132,16 +179,14 @@ def simulate_pass(config: MissionConfig | None = None, *, eve=None) -> PassResul
     classical_bound = teleportation_results[0].classical_bound
 
     secure_key_yield_bits = _integrate_yield_bits(
-        pass_geometry.time_s,
+        axis_values,
         secure_key_rate_per_pulse,
-        cfg.pulse_repetition_rate_hz,
+        pulse_repetition_rate_hz,
     )
     mean_fidelity = sum(fidelity) / len(fidelity)
 
-    return PassResult(
-        time_s=pass_geometry.time_s,
-        elevation_deg=pass_geometry.elevation_deg,
-        slant_range_km=pass_geometry.slant_range_km,
+    return ProfileResult(
+        axis_values=list(axis_values),
         transmittance=transmittance,
         loss_db=loss_db,
         secure_key_rate_per_pulse=secure_key_rate_per_pulse,
@@ -153,8 +198,32 @@ def simulate_pass(config: MissionConfig | None = None, *, eve=None) -> PassResul
         mean_fidelity=mean_fidelity,
         classical_bound=classical_bound,
         werner_p_source=werner_p_source,
-        pulse_repetition_rate_hz=cfg.pulse_repetition_rate_hz,
-        mission=_mission_inputs(cfg),
+        pulse_repetition_rate_hz=pulse_repetition_rate_hz,
+    )
+
+
+def _pass_result_from_profile(
+    pass_geometry,
+    profile: ProfileResult,
+    config: MissionConfig,
+) -> PassResult:
+    return PassResult(
+        time_s=profile.axis_values,
+        elevation_deg=pass_geometry.elevation_deg,
+        slant_range_km=pass_geometry.slant_range_km,
+        transmittance=profile.transmittance,
+        loss_db=profile.loss_db,
+        secure_key_rate_per_pulse=profile.secure_key_rate_per_pulse,
+        effective_werner_p=profile.effective_werner_p,
+        fidelity=profile.fidelity,
+        min_loss_db=profile.min_loss_db,
+        min_loss_index=profile.min_loss_index,
+        secure_key_yield_bits=profile.secure_key_yield_bits,
+        mean_fidelity=profile.mean_fidelity,
+        classical_bound=profile.classical_bound,
+        werner_p_source=profile.werner_p_source,
+        pulse_repetition_rate_hz=profile.pulse_repetition_rate_hz,
+        mission=_mission_inputs(config),
         provenance=_default_provenance(),
     )
 

@@ -1,10 +1,12 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
-> **REVISION 5 — updated 2026-06-27.** This revision records completion of
-> PR-Fibre-1, committed with this change (d004c25). The dedicated-fibre
-> front-end is now the first substitution test of the `ChannelState.transmittance`
-> representation contract. Historical corrections and superseded counts/statuses
-> are preserved in the Correction Log rather than repeated as current body facts.
+> **REVISION 6 — updated 2026-06-30.** This revision records completion of
+> PR-A / Medium-Neutral Composition Core, committed with this change (hash:
+> pending). `mission.simulate_pass()` now delegates downstream physics
+> composition to `mission.simulate_profile(...)`, with byte-identical satellite
+> output verified against an actual captured pre-refactor fixture from HEAD
+> `ea50802`. Historical corrections and superseded counts/statuses are preserved
+> in the Correction Log rather than repeated as current body facts.
 
 **Scope of this document:** a phase-by-phase record of the Phase 2B physics build —
 what was implemented, how it was verified, the honesty guards in place, the file
@@ -36,9 +38,11 @@ The durable invariant is now twofold: exactly one authoritative production pipel
 writes each generated artifact, and each physical quantity has one owning layer. The
 current pipeline composes geometry/orbit, channel transmittance, decoy BB84, background
 coherence, teleportation fidelity, and provenance-enforced v1 emission without a second
-writer. PR-Fibre-1 extends that discipline sideways: a fibre front-end computes the same
+writer. PR-Fibre-1 extended that discipline sideways: a fibre front-end computes the same
 `ChannelState.transmittance` representation by a different physical model, and the
-existing downstream physics stack consumes it unchanged.
+existing downstream physics stack consumes it unchanged. PR-A then factored that
+downstream physics stack into a medium-neutral `simulate_profile(...)` core, so satellite
+passes are one caller of the profile composition rather than the only place it exists.
 
 The discipline throughout otherwise holds: if a quantity isn't checked against a
 known-true value or a structural invariant, it isn't trusted — and verification
@@ -61,16 +65,17 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **2B-6a** | **Restore Single Authoritative Pipeline (retire legacy decorative path)** | ✅ committed |
 | **2B-6b** | **Honest pass composition (mission.py, yield integral, fidelity arch, run.py→I/O)** | ✅ committed |
 | **2B-6c** | **Provenance hardening (enforcement, consistency, boundaries)** | ✅ implemented in current repo |
-| **PR-Fibre-1** | **Dedicated-fibre front-end contract validation** | ✅ committed with this change (d004c25) |
+| **PR-Fibre-1** | **Dedicated-fibre front-end contract validation** | ✅ committed in Rev 5 (d004c25) |
+| **PR-A** | **Medium-neutral composition core (`simulate_profile`)** | ✅ committed with this change (hash: pending) |
 
-**Test suite (current Rev-5 count):** with the qiskit extra available, the suite is
-**125 passed** (`qkd_env/bin/python -m pytest -v`). The base suite excluding
-Qiskit-specific tests is **104 passed**
+**Test suite (current Rev-6 count):** with the qiskit extra available, the suite is
+**130 passed** (`qkd_env/bin/python -m pytest -v`). The base suite excluding
+Qiskit-specific tests is **109 passed**
 (`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`).
-Delta from Rev 4: **+10 collected tests** from `tests/test_fibre.py`. The Phase A plan
-described seven logical fibre tests; the collected delta is +10 because the invalid-input
-case is parametrized across three inputs. This is expected and recorded here rather than
-hidden.
+Delta from Rev 5: **+5 collected tests** from `tests/test_profile.py` plus the committed
+pre-refactor regression fixture. These tests verify byte-identical emitted satellite JSON,
+unchanged `PassResult` data, deterministic delegation, and medium-neutral profile
+composition without satellite geometry dependencies.
 
 `python src/qkd/run.py` still prints `Min loss 27.7 dB | Fidelity 0.990` (verified).
 
@@ -78,7 +83,7 @@ hidden.
 
 ## 2. Phase-by-phase detail
 
-*(Verified accurate at Rev 5 against the repo; earlier historical notes are retained
+*(Verified accurate at Rev 6 against the repo; earlier historical notes are retained
 where they explain how the system evolved.)*
 
 ### 2B-1a — Computed teleportation fidelity & CHSH
@@ -310,6 +315,30 @@ optional `[qiskit]` extra in `pyproject.toml`.
   `p_eff == p_source` to `1e-9`; and the same BB84 protocol accepting both atmospheric
   and fibre `ChannelState` inputs.
 
+### PR-A — Medium-neutral composition core
+**Files:** `src/qkd/mission.py`, `tests/test_profile.py`,
+`tests/fixtures/pr_a_pre_refactor_satellite_output.json`.
+
+- `mission.simulate_profile(axis_values, channel_states, ...) -> ProfileResult` is now
+  the downstream composition core for already-resolved `ChannelState` sequences. It
+  computes transmittance arrays, positive loss dB, decoy BB84 secure-key-rate arrays,
+  background-light effective Werner p, teleportation fidelity, mean fidelity, and the
+  secure-key-yield integral. It introduces no new physics and performs no I/O.
+- `mission.simulate_pass()` remains the zero-argument satellite workflow. It still owns
+  orbit geometry and atmospheric `channel_state(...)` construction, then delegates all
+  downstream physics composition to `simulate_profile(...)`.
+- The `ProfileResult -> PassResult` mapping is total: every profile-computed field in
+  `PassResult` is copied from `ProfileResult`; geometry, mission inputs, and provenance
+  are added only by the satellite wrapper. No profile quantity is recomputed in both
+  places.
+- The byte-identity reference fixture was captured from the actual pre-refactor git
+  version (`git archive HEAD` at `ea50802`), not from a hand-reproduced parallel
+  implementation. Tests compare both structured payloads and the raw `json.dumps(...)`
+  emitted-results string.
+- `run.py`, `schema.py`, `channel.py`, `fibre.py`, `bb84.py`, `coherence.py`,
+  `teleportation.py`, `orbit.py`, and `signals.py` are unchanged by PR-A. Output shape,
+  provenance policy, dashboard behavior, and physics values remain unchanged.
+
 ---
 
 ## 3. Module & contract inventory
@@ -317,10 +346,11 @@ optional `[qiskit]` extra in `pyproject.toml`.
 `src/qkd/`: `teleportation.py`, `chsh.py`, `channel.py`, `orbit.py`, `bb84.py`,
 `eve.py`, `coherence.py`, `fibre.py`, `signals.py` (dataclasses: `ChannelState`,
 `DetectorParams`, `PhysicsSignals` — no trust field, by design), `mission.py`
-(single pass-composition layer), `provenance.py` (observational field-origin tags plus
-the v1 data/provenance structural validator), `run.py` (I/O and plotting only, with a
-pre-write provenance validation call), and `schema.py` (v1/v2 recognizer; v1 no longer
-requires `remaining_entangled_resource_kb`).
+(medium-neutral profile-composition core plus satellite pass wrapper), `provenance.py`
+(observational field-origin tags plus the v1 data/provenance structural validator),
+`run.py` (I/O and plotting only, with a pre-write provenance validation call), and
+`schema.py` (v1/v2 recognizer; v1 no longer requires
+`remaining_entangled_resource_kb`).
 
 **Legacy decorative path — retired in PR0/2B-6a:**
 - `qkd_model.py` (repo root) — second entry point; deleted in PR0.
@@ -347,8 +377,8 @@ top-level `teleportation`, `summary`, `pass_profile`, `mission`, `provenance`, a
 `classical_limit`, and `plot`; it no longer contains `remaining_entangled_resource_kb`.
 The `mission` section contains illustrative inputs (`pulse_repetition_rate_hz`,
 `intensities`, `detector`, `sky_condition`) and is covered by leaf-level
-`ILLUSTRATIVE` provenance. PR-Fibre-1 does not change `outputs/results.json`, `run.py`,
-schema recognition, or dashboard-visible artifacts.
+`ILLUSTRATIVE` provenance. PR-A and PR-Fibre-1 do not change `outputs/results.json`,
+`run.py`, schema recognition, or dashboard-visible artifacts.
 
 ---
 
@@ -374,11 +404,16 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
    atmospheric/orbital front-end. Existing BB84, coherence, and teleportation modules
    consume it unchanged. No length sweep, `simulate_link`, schema change, Raman model, or
    dashboard path is included.
-5. **Next active technical milestone — schema hardening / v2 emission, if continuing the
+5. **PR-A — Medium-neutral composition core: complete.** The downstream composition
+   stack is now factored into `mission.simulate_profile(...)`, while
+   `mission.simulate_pass()` remains the satellite caller. Satellite output is
+   byte-identical to the captured pre-refactor fixture; no schema, dashboard, run.py, or
+   physics behavior changed.
+6. **Next active technical milestone — PR-B / schema hardening and v2 emission, if continuing the
    hardening track.** `docs/SCHEMA_HARDENING_2B.md` remains the guide for L2 types,
    L3 ranges, L4 constants, L5 consistency, and the eventual v2.0 output flip. Do this
    as its own PR; do not half-switch v1 and v2.
-6. **Next fibre-track milestone — link composition / length sweep, if continuing the
+7. **Next fibre-track milestone — PR-C / link composition and length sweep, if continuing the
    fibre path.** That later packet should introduce any `simulate_link` or emitted fibre
    artifact deliberately rather than expanding PR-Fibre-1 retroactively.
 
@@ -405,6 +440,18 @@ file (not a remembered version) before editing; enumerate entry points / artifac
 ---
 
 ## Correction Log
+
+- **2026-06-30 (Rev 6).** Reconciled the record for PR-A / Medium-Neutral
+  Composition Core, committed with this change (hash: pending). `mission.py` now
+  contains `ProfileResult` and `simulate_profile(...)`, and `simulate_pass()` delegates
+  downstream profile composition to that core while retaining satellite geometry and
+  atmospheric channel-state construction. The byte-identity fixture was captured from the
+  actual pre-refactor git version (`git archive HEAD` at `ea50802`), not from a
+  hand-reproduced algorithm. Current suite count from real validation: 109 passed with
+  `--ignore=tests/test_teleportation_qiskit.py`; 130 passed with the qiskit extra
+  available. Delta from Rev 5 is +5 collected tests, all in `tests/test_profile.py`.
+  Output shape, `run.py`, schema recognition, provenance policy, dashboard behavior, and
+  physics values remain unchanged.
 
 - **2026-06-27 (Rev 5).** Reconciled the record for PR-Fibre-1, committed with this
   change (d004c25). This revision adds the dedicated-fibre front-end as the first
