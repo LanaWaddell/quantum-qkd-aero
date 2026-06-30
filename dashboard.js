@@ -3,41 +3,37 @@ const fs = require('fs');
 const path = require('path');
 const app = express();
 
-const resultsPaths = [
-    path.join(__dirname, 'outputs', 'results.json'),
-    path.join(__dirname, 'results.json'),
-];
+const resultsPath = path.join(__dirname, 'outputs', 'results.json');
 
 const imagePaths = [
     { filePath: path.join(__dirname, 'outputs', 'qkd_teleportation.png'), publicPath: '/outputs/qkd_teleportation.png' },
     { filePath: path.join(__dirname, 'qkd_teleportation.png'), publicPath: '/qkd_teleportation.png' },
 ];
 
-function readFirstJson(paths, callback) {
-    if (paths.length === 0) {
-        callback(null, {});
-        return;
-    }
-
-    const [candidate, ...remaining] = paths;
-    fs.readFile(candidate, 'utf8', (err, data) => {
+function readResults(callback) {
+    fs.readFile(resultsPath, 'utf8', (err, data) => {
         if (err) {
-            readFirstJson(remaining, callback);
+            callback(err);
             return;
         }
 
         try {
-            callback(null, JSON.parse(data));
+            const results = JSON.parse(data);
+            if (results.schema_version !== '2.0') {
+                callback(new Error('Unsupported results schema'));
+                return;
+            }
+            callback(null, results);
         } catch (e) {
-            readFirstJson(remaining, callback);
+            callback(e);
         }
     });
 }
 
 function normalizeStats(results) {
     return {
-        key_yield: (results.summary && results.summary.headline_key_yield) || results.key_yield || "---",
-        fidelity: (results.summary && results.summary.headline_fidelity) || results.fidelity || "---",
+        key_yield: results.summary.headline_key_yield,
+        fidelity: results.summary.headline_fidelity,
     };
 }
 
@@ -50,7 +46,12 @@ function getPlotPath() {
 app.use(express.static(__dirname));
 
 app.get('/', (req, res) => {
-    readFirstJson(resultsPaths, (err, data) => {
+    readResults((err, data) => {
+        if (err) {
+            res.status(500).send('Run python src/qkd/run.py to generate v2 results.');
+            return;
+        }
+
         const stats = normalizeStats(data);
         const plotPath = getPlotPath();
 

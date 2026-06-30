@@ -1,59 +1,47 @@
+import copy
+
 import pytest
 
+import qkd.schema as schema_module
+from qkd.mission import MissionConfig, simulate_pass
+from qkd.run import _build_results
 from qkd.schema import SchemaValidationError, detect_results_schema, validate_results_schema
 
 
-def test_schema_validator_accepts_current_v1_output_shape():
+def _current_payload(samples=11):
+    return _build_results(
+        simulate_pass(MissionConfig(samples=samples)),
+        plot_path="outputs/qkd_teleportation.png",
+    )
+
+
+def test_schema_validator_accepts_current_v2_output_shape():
+    payload = _current_payload()
+
+    assert detect_results_schema(payload) == "2.0"
+    assert validate_results_schema(payload) is True
+
+
+def test_schema_validator_rejects_v1_shape_after_cutover():
     results = {
         "teleportation": {
             "frames": 1000,
-            "average_fidelity": 0.851,
-            "classical_limit": 0.67,
+            "average_fidelity": 0.99,
+            "classical_limit": 2.0 / 3.0,
             "plot": "outputs/qkd_teleportation.png",
         },
         "summary": {
-            "headline_key_yield": "5.00 Kb",
-            "headline_fidelity": "0.851",
-        },
-        "mission": {
-            "pulse_repetition_rate_hz": 100000000.0,
-            "intensities": {"signal": 0.5, "decoy": 0.1, "vacuum": 0.0},
-            "detector": {
-                "detection_efficiency": 0.5,
-                "dark_count_prob": 0.000001,
-                "error_correction_efficiency": 1.16,
-            },
-            "sky_condition": "night",
-        },
-        "provenance": {
-            "teleportation.frames": "DERIVED",
-            "teleportation.average_fidelity": "DERIVED",
-            "teleportation.classical_limit": "ANALYTIC",
-            "teleportation.plot": "DERIVED",
-            "summary.headline_key_yield": "DERIVED",
-            "summary.headline_fidelity": "DERIVED",
-            "mission.pulse_repetition_rate_hz": "ILLUSTRATIVE",
-            "mission.intensities.signal": "ILLUSTRATIVE",
-            "mission.intensities.decoy": "ILLUSTRATIVE",
-            "mission.intensities.vacuum": "ILLUSTRATIVE",
-            "mission.detector.detection_efficiency": "ILLUSTRATIVE",
-            "mission.detector.dark_count_prob": "ILLUSTRATIVE",
-            "mission.detector.error_correction_efficiency": "ILLUSTRATIVE",
-            "mission.sky_condition": "ILLUSTRATIVE",
-        },
-        "run_metadata": {
-            "generator": "run.py",
-            "pipeline": "mission.simulate_pass",
-            "physics_mode": "computed",
+            "headline_key_yield": "1282.24 Kb",
+            "headline_fidelity": "0.990",
         },
     }
 
-    assert detect_results_schema(results) == "1"
-    assert validate_results_schema(results) is True
+    with pytest.raises(SchemaValidationError):
+        detect_results_schema(results)
 
 
-def test_schema_validator_accepts_future_v2_contract_shape():
-    results = {
+def test_schema_validator_rejects_old_orbital_v2_stub():
+    old_stub = {
         "schema_version": "2.0",
         "run_metadata": {"timestamp": "", "config_hash": "", "eve_enabled": False, "eve_type": None},
         "channel": {
@@ -96,10 +84,38 @@ def test_schema_validator_accepts_future_v2_contract_shape():
         },
     }
 
-    assert detect_results_schema(results) == "2.0"
-    assert validate_results_schema(results) is True
-
-
-def test_schema_validator_rejects_unknown_shape():
     with pytest.raises(SchemaValidationError):
-        detect_results_schema({"summary": {}})
+        detect_results_schema(old_stub)
+
+
+def test_schema_validator_accepts_generic_length_axis_without_geometry():
+    payload = _current_payload()
+    payload.pop("geometry")
+    payload["link"]["medium"] = "fibre"
+    payload["profile"]["axis"] = {
+        "name": "length_km",
+        "values": [0.0, 10.0, 20.0],
+    }
+    for path in (
+        "transmittance",
+        "loss_db",
+        "secure_key_rate_per_pulse",
+        "effective_werner_p",
+        "fidelity",
+    ):
+        payload["profile"][path] = payload["profile"][path][:3]
+
+    assert detect_results_schema(payload) == "2.0"
+    assert validate_results_schema(payload) is True
+
+
+def test_schema_module_retires_orbital_v2_required_keys_stub():
+    assert not hasattr(schema_module, "V2_REQUIRED_KEYS")
+
+
+def test_schema_validator_rejects_near_miss_missing_required_key():
+    payload = copy.deepcopy(_current_payload())
+    del payload["profile"]["aggregates"]["min_loss_axis_value"]
+
+    with pytest.raises(SchemaValidationError, match="min_loss_axis_value"):
+        detect_results_schema(payload)

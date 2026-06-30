@@ -1,13 +1,13 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
-> **REVISION 7 — updated 2026-06-30.** This revision records the PR-A test
-> correction for the robust byte-identity guard. `mission.simulate_pass()` still
-> delegates downstream physics composition to `mission.simulate_profile(...)`;
-> production behavior and emitted values are unchanged. The regression guard now
-> hashes the actual `run.main()` emitted JSON contract and compares raw
-> floating-point pass arrays with tolerance to absorb environment-level last-ULP
-> noise. Historical corrections and superseded counts/statuses are preserved in
-> the Correction Log rather than repeated as current body facts.
+> **REVISION 8 — updated 2026-06-30.** This revision records PR-B / the v2
+> output-schema cutover. `outputs/results.json` now emits schema `2.0` with the
+> axis-agnostic `link` / `profile` / optional `geometry` frame; the old v1
+> `pass_profile` shape and pre-fibre orbital `V2_REQUIRED_KEYS` stub are retired.
+> The dashboard, schema recognizer, provenance mirror, and regression tests now
+> target v2. Physics composition and numerical values are unchanged. Historical
+> corrections and superseded counts/statuses are preserved in the Correction Log
+> rather than repeated as current body facts.
 
 **Scope of this document:** a phase-by-phase record of the Phase 2B physics build —
 what was implemented, how it was verified, the honesty guards in place, the file
@@ -38,12 +38,14 @@ A semi-decorative third (an interpolated orbit) was also found and replaced.
 The durable invariant is now twofold: exactly one authoritative production pipeline
 writes each generated artifact, and each physical quantity has one owning layer. The
 current pipeline composes geometry/orbit, channel transmittance, decoy BB84, background
-coherence, teleportation fidelity, and provenance-enforced v1 emission without a second
+coherence, teleportation fidelity, and provenance-enforced v2 emission without a second
 writer. PR-Fibre-1 extended that discipline sideways: a fibre front-end computes the same
 `ChannelState.transmittance` representation by a different physical model, and the
 existing downstream physics stack consumes it unchanged. PR-A then factored that
 downstream physics stack into a medium-neutral `simulate_profile(...)` core, so satellite
 passes are one caller of the profile composition rather than the only place it exists.
+PR-B then cut the emitted artifact over to the axis-agnostic v2 frame without changing
+the physics values behind that artifact.
 
 The discipline throughout otherwise holds: if a quantity isn't checked against a
 known-true value or a structural invariant, it isn't trusted — and verification
@@ -65,17 +67,18 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | 2B-5  | Background light → effective werner_p (fidelity arch) | ✅ committed |
 | **2B-6a** | **Restore Single Authoritative Pipeline (retire legacy decorative path)** | ✅ committed |
 | **2B-6b** | **Honest pass composition (mission.py, yield integral, fidelity arch, run.py→I/O)** | ✅ committed |
-| **2B-6c** | **Provenance hardening (enforcement, consistency, boundaries)** | ✅ implemented in current repo |
+| **2B-6c** | **Provenance hardening (enforcement, consistency, boundaries)** | ✅ committed |
 | **PR-Fibre-1** | **Dedicated-fibre front-end contract validation** | ✅ committed in Rev 5 (d004c25) |
 | **PR-A** | **Medium-neutral composition core (`simulate_profile`)** | ✅ committed; robust byte-identity guard corrected |
+| **PR-B** | **v2 output schema cutover (`link` / `profile` / `geometry`)** | ✅ complete in current repo |
 
-**Test suite (current Rev-7 count):** with the qiskit extra available, the suite is
-**130 passed** (`qkd_env/bin/python -m pytest -v`). The base suite excluding
-Qiskit-specific tests is **109 passed**
+**Test suite (current Rev-8 count):** with the qiskit extra available, the suite is
+**134 passed** (`qkd_env/bin/python -m pytest -v`). The base suite excluding
+Qiskit-specific tests is **113 passed**
 (`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`).
-Delta from Rev 6: **+0 collected tests**. The correction changes two PR-A regression
-assertions only: production-path emitted JSON is now checked through `run.main()` with a
-stable hash, and raw `PassResult` float arrays use tolerance rather than exact equality.
+Delta from Rev 7: **+4 collected tests**. The new tests cover v2 schema
+rejection/acceptance, retirement of the old orbital v2 stub, and full v1-to-v2
+output-parity mapping.
 
 `python src/qkd/run.py` still prints `Min loss 27.7 dB | Fidelity 0.990` (verified).
 
@@ -83,7 +86,7 @@ stable hash, and raw `PassResult` float arrays use tolerance rather than exact e
 
 ## 2. Phase-by-phase detail
 
-*(Verified accurate at Rev 7 against the repo; earlier historical notes are retained
+*(Verified accurate at Rev 8 against the repo; earlier historical notes are retained
 where they explain how the system evolved.)*
 
 ### 2B-1a — Computed teleportation fidelity & CHSH
@@ -232,8 +235,9 @@ optional `[qiskit]` extra in `pyproject.toml`.
 - `run.py` now only calls `simulate_pass()`, renders the plot, writes
   `outputs/results.json`, and prints the headline. Physics arithmetic moved into
   `mission.py`.
-- The v1 schema recognizer remains active, but `remaining_entangled_resource_kb` is no
-  longer required or emitted. This is a contained v1 evolution, not a v2.0 switchover.
+- At PR1, the v1 schema recognizer remained active while
+  `remaining_entangled_resource_kb` was no longer required or emitted. That was a
+  contained v1 evolution, not a v2.0 switchover. PR-B later retired v1 emission.
 - `run_metadata` is emitted deterministically:
   `{generator: "run.py", pipeline: "mission.simulate_pass", physics_mode: "computed"}`.
 - `src/qkd/provenance.py` declares in-use tags (`ANALYTIC`, `SIMULATED`, `DERIVED`,
@@ -256,28 +260,29 @@ optional `[qiskit]` extra in `pyproject.toml`.
   numerical values, influence simulation state, or become physics inputs.
 - `src/qkd/provenance.py` now provides `validate_provenance(emitted, provenance_map)`.
   It is a pure structural validator: no I/O, no mutation, no physics decisions.
-- Validation scope is intentionally v1 data-only: `teleportation`, `summary`,
-  `pass_profile`, and `mission`. Metadata blocks (`provenance`, `run_metadata`) are
-  excluded.
+- Validation scope is intentionally v2 data-only: `link`, `teleportation`, `summary`,
+  `profile`, `geometry`, and `mission`. Metadata blocks (`schema_version`,
+  `provenance`, and `run_metadata`) are excluded.
 - Taggable leaf rule: mappings recurse; any non-mapping value is a leaf. Arrays/lists/
   tuples are treated as single leaves, so whole pass arrays such as
-  `pass_profile.loss_db` keep one provenance tag rather than per-index tags.
+  `profile.loss_db` keep one provenance tag rather than per-index tags.
 - The validator rejects missing tags, extra/phantom tags, unknown tags, and reserved
   tags (`MEASURED`, `ESTIMATED`, `VALIDATED`). It does **not** implement a full
   dependency graph or `depends_on_illustrative`; those remain deferred.
 - `run.py` calls `validate_provenance(results, results["provenance"])` after composing
   the payload and before writing `outputs/results.json`.
-- The emitted v1 payload now includes a `mission` section carrying the illustrative
-  inputs that were already used by the composition layer:
+- The emitted payload includes a `mission` section carrying the illustrative
+  inputs used by the composition layer:
   `pulse_repetition_rate_hz`, `intensities`, `detector`, and `sky_condition`.
 - Mission provenance is leaf-level, not parent-container-level. Current mission leaves:
   `mission.pulse_repetition_rate_hz`, `mission.intensities.signal`,
   `mission.intensities.decoy`, `mission.intensities.vacuum`,
   `mission.detector.detection_efficiency`, `mission.detector.dark_count_prob`,
   `mission.detector.error_correction_efficiency`, and `mission.sky_condition`.
-- Current emitted provenance has 28 data leaves: 4 `teleportation`, 2 `summary`,
-  14 `pass_profile`, and 8 `mission`. Bidirectional coverage now holds: every emitted
-  data leaf has a tag, and every tag points to an emitted data leaf.
+- Current emitted provenance has 32 data leaves: 3 `link`, 4 `teleportation`,
+  2 `summary`, 11 `profile`, 4 `geometry`, and 8 `mission`. Bidirectional coverage
+  now holds: every emitted data leaf has a tag, and every tag points to an emitted
+  data leaf.
 - Tests added: 11 non-qiskit tests covering validator acceptance/non-mutation, the
   array-as-single-leaf rule, missing/extra/unknown/reserved failures, illustrative
   mission constants, exact `2/3` analytic classical bound, simulated arrays changing
@@ -345,6 +350,31 @@ optional `[qiskit]` extra in `pyproject.toml`.
   `teleportation.py`, `orbit.py`, and `signals.py` are unchanged by PR-A. Output shape,
   provenance policy, dashboard behavior, and physics values remain unchanged.
 
+### PR-B — v2 output schema cutover
+**Files:** `src/qkd/run.py`, `src/qkd/schema.py`, `src/qkd/provenance.py`,
+`src/qkd/mission.py`, `dashboard.js`, `docs/INTERFACES.md`,
+`tests/test_schema.py`, `tests/test_profile.py`, `tests/test_provenance.py`,
+`tests/test_mission.py`.
+
+- `outputs/results.json` now emits `schema_version: "2.0"` and top-level
+  `link`, `teleportation`, `summary`, `profile`, `geometry`, `mission`,
+  `provenance`, and `run_metadata` sections.
+- The link descriptor is explicit and medium-neutral:
+  `{medium: "atmospheric", topology: "point_to_point", protocol: "decoy_bb84"}`.
+- `pass_profile` is retired. Medium-neutral per-point arrays live under `profile`;
+  satellite-only arrays live under `geometry`; aggregates live under
+  `profile.aggregates`.
+- The old pre-fibre `V2_REQUIRED_KEYS` stub in `schema.py` is retired. The active
+  recognizer is v2-only L1 shape validation. L2-L5 hardening remains deferred to the
+  schema-hardening track.
+- The dashboard now reads `outputs/results.json` as v2 only. The stale root
+  `results.json` fallback remains retired under the single-authoritative-pipeline
+  invariant. The plot-image fallback remains only for the historical root PNG.
+- Output parity is guarded by a map from every captured v1 leaf to exactly one v2
+  location. New v2 leaves are explicitly enumerated. The production emission path
+  hash changed because the schema shape changed; the underlying physics and headline
+  values did not.
+
 ---
 
 ## 3. Module & contract inventory
@@ -353,10 +383,10 @@ optional `[qiskit]` extra in `pyproject.toml`.
 `eve.py`, `coherence.py`, `fibre.py`, `signals.py` (dataclasses: `ChannelState`,
 `DetectorParams`, `PhysicsSignals` — no trust field, by design), `mission.py`
 (medium-neutral profile-composition core plus satellite pass wrapper), `provenance.py`
-(observational field-origin tags plus the v1 data/provenance structural validator),
-`run.py` (I/O and plotting only, with a pre-write provenance validation call), and
-`schema.py` (v1/v2 recognizer; v1 no longer requires
-`remaining_entangled_resource_kb`).
+(observational field-origin tags plus the v2 data/provenance structural validator),
+`run.py` (I/O and plotting only, with pre-write schema and provenance validation), and
+`schema.py` (v2-only L1 recognizer; the old orbital `V2_REQUIRED_KEYS` stub is
+retired).
 
 **Legacy decorative path — retired in PR0/2B-6a:**
 - `qkd_model.py` (repo root) — second entry point; deleted in PR0.
@@ -367,7 +397,7 @@ optional `[qiskit]` extra in `pyproject.toml`.
 - Stale root `./results.json` (pre-nesting flat shape, no current writer) — `git rm` in PR0.
 - The retirement is documented in `docs/architecture/ADR-0001-single-authoritative-pipeline.md`.
 
-Docs: `docs/INTERFACES.md` (canonical contract), `docs/SCHEMA_HARDENING_2B.md`,
+Docs: `docs/INTERFACES.md` (canonical v2 contract), `docs/SCHEMA_HARDENING_2B.md`,
 `docs/PHASE_2B4_DECOY_EVE.md`, `docs/PHASE_2B5_BACKGROUND_LIGHT.md`,
 `docs/PHASE_2B6_SEQUENCE.md` (PR0/PR1/PR2 sequence/spec history), and
 `docs/architecture/ADR-0001-single-authoritative-pipeline.md`.
@@ -377,14 +407,16 @@ Archive: `01-Gate-Noise-Archive/` (preserved Qiskit/QEC research — do not dele
 NOT calibrated. The simulator models correct *relationships and behaviours*, not the
 absolute performance of any real link.
 
-**Current output shape:** `outputs/results.json` remains v1-recognized and currently has
-top-level `teleportation`, `summary`, `pass_profile`, `mission`, `provenance`, and
-`run_metadata` sections. `teleportation` contains `frames`, `average_fidelity`,
-`classical_limit`, and `plot`; it no longer contains `remaining_entangled_resource_kb`.
-The `mission` section contains illustrative inputs (`pulse_repetition_rate_hz`,
-`intensities`, `detector`, `sky_condition`) and is covered by leaf-level
-`ILLUSTRATIVE` provenance. PR-A and PR-Fibre-1 do not change `outputs/results.json`,
-`run.py`, schema recognition, or dashboard-visible artifacts.
+**Current output shape:** `outputs/results.json` is v2 and currently has top-level
+`schema_version`, `link`, `teleportation`, `summary`, `profile`, `geometry`,
+`mission`, `provenance`, and `run_metadata` sections. `teleportation` contains
+`frames`, `average_fidelity`, `classical_limit`, and `plot`; it does not contain
+`remaining_entangled_resource_kb`. `profile.axis` names the independent axis
+(`time_s` for satellite passes), profile arrays hold medium-neutral quantities,
+`profile.aggregates` holds derived summary values, and `geometry` holds satellite-only
+elevation/slant-range data. The `mission` section contains illustrative inputs
+(`pulse_repetition_rate_hz`, `intensities`, `detector`, `sky_condition`) and is covered
+by leaf-level `ILLUSTRATIVE` provenance.
 
 ---
 
@@ -397,14 +429,15 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
    decorative pipeline and stale root artifact are gone. ADR-0001 records the decision.
 2. **PR1 / 2B-6b — Honest composition: complete.** `mission.simulate_pass` composes
    geometry→channel→decoy SKR→coherence p_eff→fidelity; yield is the pass integral;
-   `run.py` is I/O only; the dead `remaining_entangled_resource_kb` key is dropped; v1
-   output remains recognized; and deterministic `run_metadata` plus provenance tags are
-   emitted.
+   `run.py` is I/O only; the dead `remaining_entangled_resource_kb` key is dropped; and
+   deterministic `run_metadata` plus provenance tags are emitted. At PR1 this remained
+   a v1-compatible output evolution; PR-B supersedes it with v2 emission.
 3. **PR2 / 2B-6c — Provenance hardening: complete in the current repo.** The enum and
-   emitted tags from PR1 are now enforced by `validate_provenance`. The validator covers
-   v1 data leaves, rejects missing/extra/unknown/reserved tags, and is called by `run.py`
-   before JSON emission. PR2 deliberately deferred dependency-graph metadata such as
-   `depends_on_illustrative` and did not change physics values.
+   emitted tags from PR1 are enforced by `validate_provenance`. The validator rejects
+   missing/extra/unknown/reserved tags and is called by `run.py` before JSON emission.
+   It originally covered v1 data leaves; PR-B migrated the same enforcement to the v2
+   `link` / `profile` / `geometry` shape. PR2 deliberately deferred dependency-graph
+   metadata such as `depends_on_illustrative` and did not change physics values.
 4. **PR-Fibre-1 — Fibre channel front-end contract validation: complete.** A static
    dedicated-fibre channel function now emits the same `ChannelState` contract as the
    atmospheric/orbital front-end. Existing BB84, coherence, and teleportation modules
@@ -416,13 +449,16 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
    guarded against the captured pre-refactor fixture through a production-path emitted
    JSON hash plus tolerant raw-array comparison; no schema, dashboard, run.py, or physics
    behavior changed.
-6. **Next active technical milestone — PR-B / schema hardening and v2 emission, if continuing the
-   hardening track.** `docs/SCHEMA_HARDENING_2B.md` remains the guide for L2 types,
-   L3 ranges, L4 constants, L5 consistency, and the eventual v2.0 output flip. Do this
-   as its own PR; do not half-switch v1 and v2.
+6. **PR-B — v2 output schema cutover: complete.** `outputs/results.json` now emits the
+   ADR-0002-aligned v2 frame with `link`, axis-agnostic `profile`, satellite
+   `geometry`, and v2 provenance coverage. v1 and the old orbital v2 stub are retired.
 7. **Next fibre-track milestone — PR-C / link composition and length sweep, if continuing the
    fibre path.** That later packet should introduce any `simulate_link` or emitted fibre
    artifact deliberately rather than expanding PR-Fibre-1 retroactively.
+8. **Later hardening milestone — PR-D / L2-L5 schema hardening.**
+   `docs/SCHEMA_HARDENING_2B.md` remains the guide for L2 types, L3 ranges,
+   L4 constants, and L5 consistency. PR-B intentionally implements only the v2 shape
+   cutover and does not add those deeper guards.
 
 **Further out (updated):** Phase 2C broader mission orchestration grows from the
 `simulate_pass` composition layer rather than inventing a second composition point.
@@ -433,11 +469,9 @@ hardware. The applied target (Quantum City municipal-fibre proposal) reuses this
 substrate by swapping the channel front-end; the CQN layer in that proposal maps onto
 Phase 2D.
 
-**Schema decision (standing):** v2.0 emission + L2–L5 validator hardening
-(`SCHEMA_HARDENING_2B.md`) remains its own PR. PR1's drop of the single dead v1 key and
-addition of `provenance`/`run_metadata`, plus PR2's additive `mission` section and
-provenance validator, were v1-compatible, additive/contained changes, not the v2.0 flip.
-Do not half-switch.
+**Schema decision (standing):** v2.0 emission is now complete. L2–L5 validator hardening
+(`SCHEMA_HARDENING_2B.md`) remains a later PR. Do not mix deep schema hardening into
+physics or dashboard changes.
 
 **If picking up fresh:** read this + `docs/INTERFACES.md` + `docs/PHASE_2B6_SEQUENCE.md`;
 run the validation commands listed in §1; reconcile any module against the actual repo
@@ -448,7 +482,20 @@ file (not a remembered version) before editing; enumerate entry points / artifac
 
 ## Correction Log
 
-- **2026-06-30 (Rev 7).** Corrected the PR-A regression tests after clean-clone
+- **2026-06-30 (Rev 8).** Reconciled the record for PR-B / v2 output schema
+  cutover. The current emitted artifact is schema `2.0` with top-level
+  `schema_version`, `link`, `teleportation`, `summary`, `profile`, `geometry`,
+  `mission`, `provenance`, and `run_metadata`. The old v1 `pass_profile` shape and
+  the pre-fibre orbital `V2_REQUIRED_KEYS` stub are retired. Dashboard reading,
+  schema recognition, provenance validation, and regression tests now target v2.
+  Output parity is verified by mapping every captured v1 leaf to exactly one v2
+  location while enumerating the new v2 leaves. Current suite count from real
+  validation: 113 passed with `--ignore=tests/test_teleportation_qiskit.py`; 134
+  passed with the qiskit extra available. Delta from Rev 7 is +4 collected tests.
+  `python src/qkd/run.py` still prints `Dashboard Updated: Min loss 27.7 dB |
+  Fidelity 0.990`; physics composition and numerical values are unchanged.
+
+- **2026-06-30 (Rev 7, 42096c9).** Corrected the PR-A regression tests after clean-clone
   verification exposed two brittle guards: exact equality over raw floating-point arrays
   could fail on environment-level last-ULP differences, and a plot-path comparison needed
   to be pinned to the real production emission path rather than a separately constructed
@@ -459,7 +506,7 @@ file (not a remembered version) before editing; enumerate entry points / artifac
   qiskit extra available. Delta from Rev 6 is +0 collected tests.
 
 - **2026-06-30 (Rev 6).** Reconciled the record for PR-A / Medium-Neutral
-  Composition Core, committed with this change (hash: pending). `mission.py` now
+  Composition Core, committed in Rev 6. `mission.py` now
   contains `ProfileResult` and `simulate_profile(...)`, and `simulate_pass()` delegates
   downstream profile composition to that core while retaining satellite geometry and
   atmospheric channel-state construction. The byte-identity fixture was captured from the

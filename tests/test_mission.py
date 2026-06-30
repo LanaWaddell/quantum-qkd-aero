@@ -84,13 +84,21 @@ def test_default_headline_values_remain_computed_and_stable():
     assert result.mean_fidelity == pytest.approx(0.990, abs=1e-12)
 
 
-def test_v1_results_shape_drops_dead_key_and_accepts_metadata():
+def test_v2_results_shape_drops_dead_key_and_accepts_metadata():
     result = simulate_pass(MissionConfig(samples=11))
     payload = _build_results(result, plot_path="outputs/qkd_teleportation.png")
 
     assert "remaining_entangled_resource_kb" not in payload["teleportation"]
+    assert "pass_profile" not in payload
+    assert payload["schema_version"] == "2.0"
+    assert payload["link"] == {
+        "medium": "atmospheric",
+        "topology": "point_to_point",
+        "protocol": "decoy_bb84",
+    }
+    assert payload["profile"]["axis"]["name"] == "time_s"
     assert payload["mission"] == result.mission
-    assert detect_results_schema(payload) == "1"
+    assert detect_results_schema(payload) == "2.0"
     assert validate_provenance(payload, payload["provenance"]) is True
 
 

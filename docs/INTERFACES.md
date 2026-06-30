@@ -319,44 +319,83 @@ owns only the composition and integration over opportunity.
 
 ## 5. Output schema — `outputs/results.json`
 
-This schema **kills the original audit bug** (run.py wrote values nested under
-`summary`; dashboard.js read flat root-level keys → silent mismatch). Defined
-once here; both writer and dashboard conform.
+PR-B hard-cuts the emitted artifact to schema v2.0. The old v1 `pass_profile`
+shape is retired, and the pre-fibre `V2_REQUIRED_KEYS` stub with orbital
+`channel` fields is superseded by ADR-0002.
+
+The v2 shape declares the concrete quantum-link design point and separates the
+independent profile axis from medium-specific context. Satellite emission uses
+`profile.axis.name = "time_s"` and includes `geometry`; a future fibre sweep can
+use `profile.axis.name = "length_km"` and omit `geometry`.
 
 ```jsonc
 {
   "schema_version": "2.0",
-  "run_metadata":  { "timestamp": "", "config_hash": "", "eve_enabled": false, "eve_type": null },
-  "channel":       { "transmittance": 0, "werner_p": 0, "intrinsic_qber": 0,
-                     "slant_range_km": null, "elevation_deg": null },
-  "bb84":          { "sifted_key_length": 0, "qber": 0,
-                     "gains": { "signal": 0, "decoy": 0, "vacuum": 0 },
-                     "y1_lower_bound": 0, "e1_upper_bound": 0,
-                     "secure_key_rate": 0, "decoy_anomaly_score": 0 },
-  "teleportation": { "fidelity": 0, "singlet_fraction": 0, "classical_bound": 0.6667,
-                     "beats_classical": false, "margin": 0 },
-  "chsh":          { "S": 0, "classical_bound": 2.0, "tsirelson_bound": 2.8284,
-                     "violates": false, "margin": 0 },
-  "physics_signals": { "qber": 0, "decoy_anomaly_score": 0, "chsh_margin": 0,
-                       "teleportation_margin": 0, "loss_rate": 0, "secure_key_rate": 0 }
+  "link": {
+    "medium": "atmospheric",
+    "topology": "point_to_point",
+    "protocol": "decoy_bb84"
+  },
+  "teleportation": {
+    "frames": 1000,
+    "average_fidelity": 0.99,
+    "classical_limit": 0.6666666666666666,
+    "plot": "outputs/qkd_teleportation.png"
+  },
+  "summary": {
+    "headline_key_yield": "1282.24 Kb",
+    "headline_fidelity": "0.990"
+  },
+  "profile": {
+    "axis": { "name": "time_s", "values": [] },
+    "transmittance": [],
+    "loss_db": [],
+    "secure_key_rate_per_pulse": [],
+    "effective_werner_p": [],
+    "fidelity": [],
+    "aggregates": {
+      "min_loss_db": 0.0,
+      "min_loss_axis_value": 0.0,
+      "secure_key_yield_bits": 0.0,
+      "mean_fidelity": 0.0
+    }
+  },
+  "geometry": {
+    "elevation_deg": [],
+    "slant_range_km": [],
+    "min_loss": { "elevation_deg": 0.0, "slant_range_km": 0.0 }
+  },
+  "mission": {
+    "pulse_repetition_rate_hz": 100000000.0,
+    "intensities": { "signal": 0.5, "decoy": 0.1, "vacuum": 0.0 },
+    "detector": {
+      "detection_efficiency": 0.5,
+      "dark_count_prob": 0.000001,
+      "error_correction_efficiency": 1.16
+    },
+    "sky_condition": "night"
+  },
+  "run_metadata": {
+    "generator": "run.py",
+    "pipeline": "mission.simulate_pass",
+    "physics_mode": "computed"
+  },
+  "provenance": {}
 }
 ```
 
-### Schema versioning — the 2A / 2B resolution (read carefully)
+### Output-parity verification
 
-There is an apparent contradiction to resolve: 2A should set up schema
-versioning, but Codex must **not** emit real v2.0 physics yet. Resolution:
+Byte-identity and output parity are checked against the system's real emitted,
+serialized artifact, never a hand-reconstructed payload or a raw-float hash.
+PR-A exposed both failure modes: exact equality over captured raw float arrays
+is environment-fragile at the last ULP, and a hand-built `_build_results(...)`
+call can silently diverge from the production path if given a wrong argument.
 
-- **`[2A]` DEFINES and REGISTERS v2.0** — this document + a **version-aware
-  validator** that recognises *both* the current v1 toy output and v2.0.
-- **`[2A]` the simulator keeps EMITTING v1.** No physics fields are populated.
-- **`[2B]` flips the switchover** to emitting v2.0, once the modules exist to
-  fill the fields honestly.
-
-So the validator and the schema exist now; the *emission* changes later. The
-2A test is written against v2.0 (version-aware) so it is **not thrown away**
-when 2B lands. Codex does not write physics to satisfy it — the test simply
-tolerates v1 today and is ready for v2.0 tomorrow.
+The robust pattern is: drive the real emission path, normalize and serialize the
+artifact, assert a stable contract hash, and separately compare numeric values
+with a tight tolerance (`_stable_json_hash` plus `pytest.approx`). PR-C and
+later schema work inherit this rule.
 
 ---
 

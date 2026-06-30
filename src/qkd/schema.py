@@ -1,8 +1,4 @@
-"""Version-aware results schema recognition for Phase 2A.
-
-The simulator continues to emit the current v1 schema for now. This module
-recognizes that v1 shape and the future v2.0 contract from docs/INTERFACES.md.
-"""
+"""Results schema recognition for the v2 emitted artifact."""
 
 from __future__ import annotations
 
@@ -16,54 +12,22 @@ class SchemaValidationError(ValueError):
     """Raised when a results payload does not match a known schema."""
 
 
-V1_REQUIRED_KEYS = {
-    "teleportation": {"frames", "average_fidelity", "classical_limit", "plot"},
-    "summary": {"headline_key_yield", "headline_fidelity"},
-}
-
-V2_REQUIRED_KEYS = {
-    "run_metadata": {"timestamp", "config_hash", "eve_enabled", "eve_type"},
-    "channel": {"transmittance", "werner_p", "intrinsic_qber", "slant_range_km", "elevation_deg"},
-    "bb84": {
-        "sifted_key_length",
-        "qber",
-        "gains",
-        "y1_lower_bound",
-        "e1_upper_bound",
-        "secure_key_rate",
-        "decoy_anomaly_score",
-    },
-    "teleportation": {"fidelity", "singlet_fraction", "classical_bound", "beats_classical", "margin"},
-    "chsh": {"S", "classical_bound", "tsirelson_bound", "violates", "margin"},
-    "physics_signals": {
-        "qber",
-        "decoy_anomaly_score",
-        "chsh_margin",
-        "teleportation_margin",
-        "loss_rate",
-        "secure_key_rate",
-    },
-}
-
-
-# TODO(2B): This validator is a RECOGNIZER, not a GUARD. It checks key presence
-#   only (L1). Before flipping outputs/results.json emission to v2.0, implement
-#   L2 types (+reject NaN/inf), L3 ranges, L4 constants, L5 cross-field
-#   consistency, per docs/SCHEMA_HARDENING_2B.md. Landing that hardening will
-#   intentionally break test_schema_validator_accepts_future_v2_contract_shape
-#   (all-zero sample is inconsistent under L5) — migrate it per §8 in the same PR.
+# TODO(PR-D): This validator is still a RECOGNIZER, not a deep GUARD. PR-B
+#   retires v1 and the pre-fibre orbital v2 stub, then keeps L1 key-shape
+#   validation only. Implement L2 types (+reject NaN/inf), L3 ranges,
+#   L4 constants, and L5 cross-field consistency later per
+#   docs/SCHEMA_HARDENING_2B.md.
 def detect_results_schema(results: Mapping[str, Any]) -> str:
-    """Return ``"1"`` or ``"2.0"`` when a known results schema is recognized."""
+    """Return ``"2.0"`` when the emitted results schema is recognized."""
 
     if not isinstance(results, Mapping):
         raise SchemaValidationError("Results payload must be a mapping.")
 
-    if results.get("schema_version") == "2.0":
-        _require_sections(results, V2_REQUIRED_KEYS)
-        return "2.0"
+    if results.get("schema_version") != "2.0":
+        raise SchemaValidationError("Unsupported or missing schema_version.")
 
-    _require_sections(results, V1_REQUIRED_KEYS)
-    return "1"
+    _require_v2_shape(results)
+    return "2.0"
 
 
 def validate_results_schema(results: Mapping[str, Any]) -> bool:
@@ -90,3 +54,63 @@ def _require_sections(results: Mapping[str, Any], required: Mapping[str, set[str
         if missing:
             missing_keys = ", ".join(sorted(missing))
             raise SchemaValidationError(f"Missing keys in {section}: {missing_keys}")
+
+
+def _require_v2_shape(results: Mapping[str, Any]) -> None:
+    _require_sections(
+        results,
+        {
+            "link": {"medium", "topology", "protocol"},
+            "teleportation": {"frames", "average_fidelity", "classical_limit", "plot"},
+            "summary": {"headline_key_yield", "headline_fidelity"},
+            "profile": {
+                "axis",
+                "transmittance",
+                "loss_db",
+                "secure_key_rate_per_pulse",
+                "effective_werner_p",
+                "fidelity",
+                "aggregates",
+            },
+            "mission": {
+                "pulse_repetition_rate_hz",
+                "intensities",
+                "detector",
+                "sky_condition",
+            },
+            "run_metadata": {"generator", "pipeline", "physics_mode"},
+            "provenance": set(),
+        },
+    )
+    _require_sections(results["profile"], {"axis": {"name", "values"}})
+    _require_sections(
+        results["profile"],
+        {
+            "aggregates": {
+                "min_loss_db",
+                "min_loss_axis_value",
+                "secure_key_yield_bits",
+                "mean_fidelity",
+            },
+        },
+    )
+    _require_sections(
+        results["mission"],
+        {
+            "intensities": {"signal", "decoy", "vacuum"},
+            "detector": {
+                "detection_efficiency",
+                "dark_count_prob",
+                "error_correction_efficiency",
+            },
+        },
+    )
+    if "geometry" in results:
+        _require_sections(
+            results,
+            {"geometry": {"elevation_deg", "slant_range_km", "min_loss"}},
+        )
+        _require_sections(
+            results["geometry"],
+            {"min_loss": {"elevation_deg", "slant_range_km"}},
+        )

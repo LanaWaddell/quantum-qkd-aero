@@ -19,7 +19,7 @@ class Provenance(str, Enum):
     VALIDATED = "VALIDATED"
 
 
-DATA_SECTIONS = ("teleportation", "summary", "pass_profile", "mission")
+DATA_SECTIONS = ("link", "teleportation", "summary", "profile", "geometry", "mission")
 RESERVED_TAGS = {
     Provenance.MEASURED.value,
     Provenance.ESTIMATED.value,
@@ -37,12 +37,13 @@ def validate_provenance(
 ) -> bool:
     """Validate provenance coverage for emitted simulator data leaves.
 
-    A taggable leaf is any non-mapping value reachable under the data sections
-    ``teleportation``, ``summary``, ``pass_profile``, and ``mission``. Nested
-    mappings recurse; arrays/lists/tuples are intentionally treated as single
-    leaves so existing whole-array tags such as ``pass_profile.loss_db`` remain
-    the unit of provenance. Metadata sections such as ``provenance`` and
-    ``run_metadata`` are outside the validation scope.
+    A taggable leaf is any non-mapping value reachable under the v2 data
+    sections ``link``, ``teleportation``, ``summary``, ``profile``,
+    ``geometry``, and ``mission``. Nested mappings recurse; arrays/lists/tuples
+    are intentionally treated as single leaves so whole-array tags such as
+    ``profile.loss_db`` remain the unit of provenance. Metadata sections such
+    as ``schema_version``, ``provenance``, and ``run_metadata`` are outside the
+    validation scope.
     """
 
     if not isinstance(emitted, Mapping):

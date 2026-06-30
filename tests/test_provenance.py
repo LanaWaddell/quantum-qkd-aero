@@ -49,14 +49,14 @@ def test_validate_provenance_accepts_real_emission_and_does_not_mutate_payload()
 
 def test_validate_provenance_treats_arrays_as_single_leaves():
     emitted = {
-        "pass_profile": {"loss_db": [3.0, 2.0, 3.0]},
+        "profile": {"loss_db": [3.0, 2.0, 3.0]},
         "run_metadata": {"generator": "unit-test"},
         "provenance": {},
     }
 
-    assert validate_provenance(emitted, {"pass_profile.loss_db": Provenance.SIMULATED.value}) is True
+    assert validate_provenance(emitted, {"profile.loss_db": Provenance.SIMULATED.value}) is True
     with pytest.raises(ProvenanceValidationError):
-        validate_provenance(emitted, {"pass_profile.loss_db.0": Provenance.SIMULATED.value})
+        validate_provenance(emitted, {"profile.loss_db.0": Provenance.SIMULATED.value})
 
 
 @pytest.mark.parametrize(
@@ -68,7 +68,7 @@ def test_validate_provenance_treats_arrays_as_single_leaves():
         ),
         (
             lambda payload: payload["provenance"].__setitem__(
-                "pass_profile.non_emitted_field",
+                "profile.non_emitted_field",
                 Provenance.DERIVED.value,
             ),
             "non-emitted fields",
@@ -119,6 +119,14 @@ def test_illustrative_mission_inputs_are_emitted_and_fully_tagged():
     }
     assert mission["sky_condition"] == "night"
 
+    for path in {
+        "link.medium",
+        "link.topology",
+        "link.protocol",
+        "profile.axis.name",
+    }:
+        assert provenance[path] == Provenance.ILLUSTRATIVE.value
+
     detector_paths = {
         "mission.detector.detection_efficiency",
         "mission.detector.dark_count_prob",
@@ -156,21 +164,25 @@ def test_simulated_pass_arrays_change_when_physical_geometry_changes():
         "effective_werner_p",
         "fidelity",
     ):
-        assert low_pass["pass_profile"][path] != high_pass["pass_profile"][path]
-        assert low_pass["provenance"][f"pass_profile.{path}"] == Provenance.SIMULATED.value
+        assert low_pass["profile"][path] != high_pass["profile"][path]
+        assert low_pass["provenance"][f"profile.{path}"] == Provenance.SIMULATED.value
 
-    assert low_pass["pass_profile"]["loss_db"] != high_pass["pass_profile"]["loss_db"]
-    assert low_pass["provenance"]["pass_profile.loss_db"] == Provenance.DERIVED.value
+    assert low_pass["profile"]["loss_db"] != high_pass["profile"]["loss_db"]
+    assert low_pass["provenance"]["profile.loss_db"] == Provenance.DERIVED.value
+    assert low_pass["geometry"]["elevation_deg"] != high_pass["geometry"]["elevation_deg"]
+    assert low_pass["provenance"]["geometry.elevation_deg"] == Provenance.SIMULATED.value
 
 
 def test_derived_values_recompute_from_emitted_components():
     _, payload = _payload(MissionConfig(samples=31))
-    profile = payload["pass_profile"]
+    profile = payload["profile"]
+    geometry = payload["geometry"]
     mission = payload["mission"]
     summary = payload["summary"]
     teleportation = payload["teleportation"]
 
-    dt = (profile["time_s"][-1] - profile["time_s"][0]) / (len(profile["time_s"]) - 1)
+    axis_values = profile["axis"]["values"]
+    dt = (axis_values[-1] - axis_values[0]) / (len(axis_values) - 1)
     expected_yield = sum(
         rate * mission["pulse_repetition_rate_hz"] * dt
         for rate in profile["secure_key_rate_per_pulse"]
@@ -178,21 +190,24 @@ def test_derived_values_recompute_from_emitted_components():
     expected_mean_fidelity = sum(profile["fidelity"]) / len(profile["fidelity"])
     min_loss_index = min(range(len(profile["loss_db"])), key=profile["loss_db"].__getitem__)
 
-    assert profile["secure_key_yield_bits"] == pytest.approx(expected_yield, abs=1e-9)
-    assert profile["mean_fidelity"] == pytest.approx(expected_mean_fidelity, abs=1e-15)
-    assert profile["min_loss_db"] == profile["loss_db"][min_loss_index]
-    assert profile["min_loss_time_s"] == profile["time_s"][min_loss_index]
-    assert profile["min_loss_elevation_deg"] == profile["elevation_deg"][min_loss_index]
-    assert profile["min_loss_slant_range_km"] == profile["slant_range_km"][min_loss_index]
+    assert profile["aggregates"]["secure_key_yield_bits"] == pytest.approx(expected_yield, abs=1e-9)
+    assert profile["aggregates"]["mean_fidelity"] == pytest.approx(expected_mean_fidelity, abs=1e-15)
+    assert profile["aggregates"]["min_loss_db"] == profile["loss_db"][min_loss_index]
+    assert profile["aggregates"]["min_loss_axis_value"] == axis_values[min_loss_index]
+    assert geometry["min_loss"]["elevation_deg"] == geometry["elevation_deg"][min_loss_index]
+    assert geometry["min_loss"]["slant_range_km"] == geometry["slant_range_km"][min_loss_index]
     assert summary["headline_key_yield"] == f"{expected_yield / 1_000.0:.2f} Kb"
     assert summary["headline_fidelity"] == f"{expected_mean_fidelity:.3f}"
     assert teleportation["average_fidelity"] == round(expected_mean_fidelity, 3)
 
     for path in (
-        "pass_profile.loss_db",
-        "pass_profile.min_loss_db",
-        "pass_profile.secure_key_yield_bits",
-        "pass_profile.mean_fidelity",
+        "profile.loss_db",
+        "profile.aggregates.min_loss_db",
+        "profile.aggregates.min_loss_axis_value",
+        "profile.aggregates.secure_key_yield_bits",
+        "profile.aggregates.mean_fidelity",
+        "geometry.min_loss.elevation_deg",
+        "geometry.min_loss.slant_range_km",
         "summary.headline_key_yield",
         "summary.headline_fidelity",
         "teleportation.average_fidelity",

@@ -22,6 +22,7 @@ if SRC_DIR not in sys.path:
 
 from qkd.mission import simulate_pass
 from qkd.provenance import validate_provenance
+from qkd.schema import validate_results_schema
 
 
 def main():
@@ -72,6 +73,7 @@ def main():
     plt.close(fig)
 
     results = _build_results(result, plot_path="outputs/qkd_teleportation.png")
+    validate_results_schema(results)
     validate_provenance(results, results["provenance"])
 
     with open(results_path, "w", encoding="utf-8") as f:
@@ -88,6 +90,12 @@ def _build_results(result, *, plot_path):
     headline_key_yield = f"{result.secure_key_yield_bits / 1_000.0:.2f} Kb"
 
     return {
+        "schema_version": "2.0",
+        "link": {
+            "medium": "atmospheric",
+            "topology": "point_to_point",
+            "protocol": "decoy_bb84",
+        },
         "teleportation": {
             "frames": len(result.time_s),
             "average_fidelity": round(result.mean_fidelity, 3),
@@ -98,21 +106,30 @@ def _build_results(result, *, plot_path):
             "headline_key_yield": headline_key_yield,
             "headline_fidelity": f"{result.mean_fidelity:.3f}",
         },
-        "pass_profile": {
-            "time_s": result.time_s,
-            "elevation_deg": result.elevation_deg,
-            "slant_range_km": result.slant_range_km,
+        "profile": {
+            "axis": {
+                "name": "time_s",
+                "values": result.time_s,
+            },
             "transmittance": result.transmittance,
             "loss_db": result.loss_db,
             "secure_key_rate_per_pulse": result.secure_key_rate_per_pulse,
             "effective_werner_p": result.effective_werner_p,
             "fidelity": result.fidelity,
-            "min_loss_db": result.min_loss_db,
-            "min_loss_time_s": result.time_s[result.min_loss_index],
-            "min_loss_elevation_deg": result.elevation_deg[result.min_loss_index],
-            "min_loss_slant_range_km": result.slant_range_km[result.min_loss_index],
-            "secure_key_yield_bits": result.secure_key_yield_bits,
-            "mean_fidelity": result.mean_fidelity,
+            "aggregates": {
+                "min_loss_db": result.min_loss_db,
+                "min_loss_axis_value": result.time_s[result.min_loss_index],
+                "secure_key_yield_bits": result.secure_key_yield_bits,
+                "mean_fidelity": result.mean_fidelity,
+            },
+        },
+        "geometry": {
+            "elevation_deg": result.elevation_deg,
+            "slant_range_km": result.slant_range_km,
+            "min_loss": {
+                "elevation_deg": result.elevation_deg[result.min_loss_index],
+                "slant_range_km": result.slant_range_km[result.min_loss_index],
+            },
         },
         "mission": result.mission,
         "provenance": result.provenance,
