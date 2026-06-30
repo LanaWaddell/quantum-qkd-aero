@@ -1,3 +1,4 @@
+import hashlib
 import inspect
 import json
 from dataclasses import asdict
@@ -12,12 +13,17 @@ from qkd.mission import (
     simulate_profile,
 )
 from qkd.provenance import validate_provenance
-from qkd.run import _build_results
+import qkd.run as run_module
 from qkd.signals import ChannelState, DetectorParams
 from qkd.teleportation import teleportation_fidelity
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "pr_a_pre_refactor_satellite_output.json"
+FLOAT_REL_TOL = 1e-12
+FLOAT_ABS_TOL = 1e-12
+EXPECTED_EMITTED_RESULTS_STABLE_SHA256 = (
+    "5e24f984776a1906e65ee588557f5256ac6b547995c8e43c16ee0bd0e33b5612"
+)
 
 
 def _fixture():
@@ -27,23 +33,29 @@ def _fixture():
 def test_simulate_pass_matches_captured_pre_refactor_pass_result():
     fixture = _fixture()
 
-    assert asdict(simulate_pass()) == fixture["pass_result"]
+    _assert_close_structure(asdict(simulate_pass()), fixture["pass_result"])
 
 
-def test_emitted_results_match_captured_pre_refactor_bytes():
+def test_run_main_emitted_results_match_captured_pre_refactor_contract(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
     fixture = _fixture()
-    result = simulate_pass()
-    payload = _build_results(result, plot_path="outputs/qkd_teleportation.png")
-    headline = (
-        "Dashboard Updated: "
-        f"Min loss {result.min_loss_db:.1f} dB | "
-        f"Fidelity {result.mean_fidelity:.3f}"
-    )
+    monkeypatch.setattr(run_module, "OUTPUTS_DIR", str(tmp_path))
 
-    assert payload == fixture["emitted_results"]
-    assert json.dumps(payload) == fixture["emitted_results_json"]
-    assert headline == fixture["headline"]
-    assert validate_provenance(payload, payload["provenance"]) is True
+    run_module.main()
+
+    emitted_text = (tmp_path / "results.json").read_text(encoding="utf-8")
+    emitted_payload = json.loads(emitted_text)
+    printed_headline = capsys.readouterr().out.strip()
+
+    assert emitted_payload["teleportation"]["plot"] == "outputs/qkd_teleportation.png"
+    assert emitted_payload["teleportation"]["plot"] == fixture["emitted_results"]["teleportation"]["plot"]
+    assert _stable_json_hash(fixture["emitted_results"]) == EXPECTED_EMITTED_RESULTS_STABLE_SHA256
+    assert _stable_json_hash(emitted_payload) == EXPECTED_EMITTED_RESULTS_STABLE_SHA256
+    assert printed_headline == fixture["headline"]
+    assert validate_provenance(emitted_payload, emitted_payload["provenance"]) is True
 
 
 def test_simulate_pass_remains_deterministic_after_profile_delegation():
@@ -91,3 +103,44 @@ def test_simulate_profile_source_has_no_satellite_geometry_dependencies():
     assert "orbit" not in source
     assert "elevation" not in source
     assert "slant_range" not in source
+
+
+def _assert_close_structure(actual, expected, path="root"):
+    if isinstance(expected, dict):
+        assert isinstance(actual, dict), path
+        assert actual.keys() == expected.keys(), path
+        for key in expected:
+            _assert_close_structure(actual[key], expected[key], f"{path}.{key}")
+        return
+
+    if isinstance(expected, list):
+        assert isinstance(actual, list), path
+        assert len(actual) == len(expected), path
+        for index, (actual_item, expected_item) in enumerate(zip(actual, expected)):
+            _assert_close_structure(actual_item, expected_item, f"{path}[{index}]")
+        return
+
+    if isinstance(expected, float):
+        assert actual == pytest.approx(expected, rel=FLOAT_REL_TOL, abs=FLOAT_ABS_TOL), path
+        return
+
+    assert actual == expected, path
+
+
+def _stable_json_hash(payload):
+    stable_text = json.dumps(
+        _stable_json_value(payload),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(stable_text.encode("utf-8")).hexdigest()
+
+
+def _stable_json_value(value):
+    if isinstance(value, float):
+        return format(value, ".12g")
+    if isinstance(value, list):
+        return [_stable_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _stable_json_value(value[key]) for key in sorted(value)}
+    return value

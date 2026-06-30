@@ -1,12 +1,13 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
-> **REVISION 6 — updated 2026-06-30.** This revision records completion of
-> PR-A / Medium-Neutral Composition Core, committed with this change (hash:
-> pending). `mission.simulate_pass()` now delegates downstream physics
-> composition to `mission.simulate_profile(...)`, with byte-identical satellite
-> output verified against an actual captured pre-refactor fixture from HEAD
-> `ea50802`. Historical corrections and superseded counts/statuses are preserved
-> in the Correction Log rather than repeated as current body facts.
+> **REVISION 7 — updated 2026-06-30.** This revision records the PR-A test
+> correction for the robust byte-identity guard. `mission.simulate_pass()` still
+> delegates downstream physics composition to `mission.simulate_profile(...)`;
+> production behavior and emitted values are unchanged. The regression guard now
+> hashes the actual `run.main()` emitted JSON contract and compares raw
+> floating-point pass arrays with tolerance to absorb environment-level last-ULP
+> noise. Historical corrections and superseded counts/statuses are preserved in
+> the Correction Log rather than repeated as current body facts.
 
 **Scope of this document:** a phase-by-phase record of the Phase 2B physics build —
 what was implemented, how it was verified, the honesty guards in place, the file
@@ -66,16 +67,15 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **2B-6b** | **Honest pass composition (mission.py, yield integral, fidelity arch, run.py→I/O)** | ✅ committed |
 | **2B-6c** | **Provenance hardening (enforcement, consistency, boundaries)** | ✅ implemented in current repo |
 | **PR-Fibre-1** | **Dedicated-fibre front-end contract validation** | ✅ committed in Rev 5 (d004c25) |
-| **PR-A** | **Medium-neutral composition core (`simulate_profile`)** | ✅ committed with this change (hash: pending) |
+| **PR-A** | **Medium-neutral composition core (`simulate_profile`)** | ✅ committed; robust byte-identity guard corrected |
 
-**Test suite (current Rev-6 count):** with the qiskit extra available, the suite is
+**Test suite (current Rev-7 count):** with the qiskit extra available, the suite is
 **130 passed** (`qkd_env/bin/python -m pytest -v`). The base suite excluding
 Qiskit-specific tests is **109 passed**
 (`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`).
-Delta from Rev 5: **+5 collected tests** from `tests/test_profile.py` plus the committed
-pre-refactor regression fixture. These tests verify byte-identical emitted satellite JSON,
-unchanged `PassResult` data, deterministic delegation, and medium-neutral profile
-composition without satellite geometry dependencies.
+Delta from Rev 6: **+0 collected tests**. The correction changes two PR-A regression
+assertions only: production-path emitted JSON is now checked through `run.main()` with a
+stable hash, and raw `PassResult` float arrays use tolerance rather than exact equality.
 
 `python src/qkd/run.py` still prints `Min loss 27.7 dB | Fidelity 0.990` (verified).
 
@@ -83,7 +83,7 @@ composition without satellite geometry dependencies.
 
 ## 2. Phase-by-phase detail
 
-*(Verified accurate at Rev 6 against the repo; earlier historical notes are retained
+*(Verified accurate at Rev 7 against the repo; earlier historical notes are retained
 where they explain how the system evolved.)*
 
 ### 2B-1a — Computed teleportation fidelity & CHSH
@@ -333,8 +333,14 @@ optional `[qiskit]` extra in `pyproject.toml`.
   places.
 - The byte-identity reference fixture was captured from the actual pre-refactor git
   version (`git archive HEAD` at `ea50802`), not from a hand-reproduced parallel
-  implementation. Tests compare both structured payloads and the raw `json.dumps(...)`
-  emitted-results string.
+  implementation. The robust guard now checks the production emission path by running
+  `run.main()` into a temporary output directory and hashing the stable serialized
+  emitted JSON contract. Raw pass arrays are compared separately with `1e-12` relative
+  and absolute tolerance so genuine drift is still caught while last-ULP environment
+  noise is absorbed.
+- The verified production plot path remains `outputs/qkd_teleportation.png`; neither
+  the pre-refactor `ea50802` run path nor the PR-A refactor emitted
+  `outputs/qkd_pass.png`.
 - `run.py`, `schema.py`, `channel.py`, `fibre.py`, `bb84.py`, `coherence.py`,
   `teleportation.py`, `orbit.py`, and `signals.py` are unchanged by PR-A. Output shape,
   provenance policy, dashboard behavior, and physics values remain unchanged.
@@ -407,8 +413,9 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
 5. **PR-A — Medium-neutral composition core: complete.** The downstream composition
    stack is now factored into `mission.simulate_profile(...)`, while
    `mission.simulate_pass()` remains the satellite caller. Satellite output is
-   byte-identical to the captured pre-refactor fixture; no schema, dashboard, run.py, or
-   physics behavior changed.
+   guarded against the captured pre-refactor fixture through a production-path emitted
+   JSON hash plus tolerant raw-array comparison; no schema, dashboard, run.py, or physics
+   behavior changed.
 6. **Next active technical milestone — PR-B / schema hardening and v2 emission, if continuing the
    hardening track.** `docs/SCHEMA_HARDENING_2B.md` remains the guide for L2 types,
    L3 ranges, L4 constants, L5 consistency, and the eventual v2.0 output flip. Do this
@@ -440,6 +447,16 @@ file (not a remembered version) before editing; enumerate entry points / artifac
 ---
 
 ## Correction Log
+
+- **2026-06-30 (Rev 7).** Corrected the PR-A regression tests after clean-clone
+  verification exposed two brittle guards: exact equality over raw floating-point arrays
+  could fail on environment-level last-ULP differences, and a plot-path comparison needed
+  to be pinned to the real production emission path rather than a separately constructed
+  payload. The refactor itself remains correct: `ea50802` and the PR-A production path
+  both emit `outputs/qkd_teleportation.png`, not `outputs/qkd_pass.png`, and no emitted
+  values or physics behavior changed. The test suite count is unchanged from Rev 6:
+  109 passed with `--ignore=tests/test_teleportation_qiskit.py`; 130 passed with the
+  qiskit extra available. Delta from Rev 6 is +0 collected tests.
 
 - **2026-06-30 (Rev 6).** Reconciled the record for PR-A / Medium-Neutral
   Composition Core, committed with this change (hash: pending). `mission.py` now
