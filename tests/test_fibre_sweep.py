@@ -33,7 +33,9 @@ def test_fibre_sweep_emits_valid_v2_without_geometry():
     }
     assert payload["profile"]["axis"]["name"] == "length_km"
     assert "geometry" not in payload
+    assert "secure_key_yield_bits" not in payload["profile"]["aggregates"]
     assert not any(path.startswith("geometry.") for path in payload["provenance"])
+    assert "profile.aggregates.secure_key_yield_bits" not in payload["provenance"]
 
 
 def test_satellite_emission_remains_pr_b_stable_hash(tmp_path, monkeypatch, capsys):
@@ -113,6 +115,7 @@ def test_run_fibre_writes_valid_v2_artifact(tmp_path, monkeypatch, capsys):
     assert (tmp_path / "qkd_fibre_sweep.png").exists()
     assert validate_results_schema(payload) is True
     assert validate_provenance(payload, payload["provenance"]) is True
+    assert "secure_key_yield_bits" not in payload["profile"]["aggregates"]
     assert payload["profile"]["aggregates"]["max_secure_distance_km"] == 190.0
     assert printed == (
         "Fibre Sweep Updated: Max secure distance 190.0 km | "

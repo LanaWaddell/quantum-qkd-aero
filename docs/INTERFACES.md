@@ -338,6 +338,11 @@ whose `secure_key_rate_per_pulse` is positive. The adjacent
 `secure_distance_bracket` records the last-positive and first-non-positive
 samples so the grid-resolution caveat is auditable.
 
+PR-D makes `profile.aggregates.secure_key_yield_bits` axis-conditional:
+`time_s` artifacts require and validate the temporal yield integral, while
+`length_km` fibre sweeps forbid it because a length-axis integral does not have
+units of bits.
+
 ```jsonc
 {
   "schema_version": "2.0",

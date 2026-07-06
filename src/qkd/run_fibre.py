@@ -110,7 +110,6 @@ def _build_results(result, *, plot_path):
             "aggregates": {
                 "min_loss_db": result.min_loss_db,
                 "min_loss_axis_value": result.length_km[result.min_loss_index],
-                "secure_key_yield_bits": result.secure_key_yield_bits,
                 "mean_fidelity": result.mean_fidelity,
                 "max_secure_distance_km": result.max_secure_distance_km,
                 "secure_distance_bracket": {

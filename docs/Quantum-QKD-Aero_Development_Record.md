@@ -1,15 +1,13 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
-> **REVISION 9 — updated 2026-06-30 (6f0527d).** This revision records PR-C / the
-> dedicated-fibre length sweep. Fibre is now the second caller of the
-> medium-neutral `mission.simulate_profile(...)` core, length-indexed under
-> `profile.axis.name = "length_km"`, emitting v2 natively with
-> `link.medium = "fibre"` and no `geometry` section. The headline fibre figure
-> of merit is `profile.aggregates.max_secure_distance_km = 190.0`, defined as
-> the last positive-SKR length sample, with the `(190 km, 195 km)` cutoff
-> bracket emitted for auditability. Historical corrections and superseded
-> counts/statuses are preserved in the Correction Log rather than repeated as
-> current body facts.
+> **REVISION 10 — updated 2026-07-05.** This revision records PR-D / Deep Schema
+> Validation and Dimensional Correction. The active v2 validator now runs L1
+> recognition plus L2 types, L3 ranges, L4 constants, L5 cross-field
+> consistency, and provenance validation by default. Fibre length sweeps no
+> longer emit `profile.aggregates.secure_key_yield_bits`; that aggregate is
+> required only for `time_s` artifacts and forbidden for `length_km` artifacts.
+> Historical corrections and superseded counts/statuses are preserved in the
+> Correction Log rather than repeated as current body facts.
 
 **Scope of this document:** a phase-by-phase record of the Phase 2B physics build —
 what was implemented, how it was verified, the honesty guards in place, the file
@@ -49,7 +47,9 @@ passes are one caller of the profile composition rather than the only place it e
 PR-B then cut the emitted artifact over to the axis-agnostic v2 frame without changing
 the physics values behind that artifact. PR-C adds the second caller: a dedicated-fibre
 length sweep that feeds fibre `ChannelState` values through the same core and emits a
-native v2 rate-distance artifact.
+native v2 rate-distance artifact. PR-D hardens that artifact boundary: emitted v2 payloads
+now fail fast on impossible values, mismatched array dimensions, undeclared schema keys,
+dimensionally invalid aggregates, algebraic inconsistencies, or provenance drift.
 
 The discipline throughout otherwise holds: if a quantity isn't checked against a
 known-true value or a structural invariant, it isn't trusted — and verification
@@ -76,12 +76,14 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **PR-A** | **Medium-neutral composition core (`simulate_profile`)** | ✅ committed; robust byte-identity guard corrected |
 | **PR-B** | **v2 output schema cutover (`link` / `profile` / `geometry`)** | ✅ committed in Rev 8 (cadab78) |
 | **PR-C** | **Fibre length sweep as second caller of `simulate_profile`** | ✅ committed in Rev 9 (6f0527d) |
+| **PR-D** | **Deep schema validation and dimensional correction** | ✅ committed |
 
-**Test suite (current Rev-9 count):** with the qiskit extra available, the suite is
-**141 passed** (`qkd_env/bin/python -m pytest -v`). The base suite excluding
-Qiskit-specific tests is **120 passed**
+**Test suite (current Rev-10 count):** with the qiskit extra available, the suite is
+**163 passed** (`qkd_env/bin/python -m pytest -q`). The base suite excluding
+Qiskit-specific tests is **142 passed**
 (`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`).
-Delta from Rev 8: **+7 collected tests**, all in `tests/test_fibre_sweep.py`.
+Delta from Rev 9: **+22 collected tests**, mostly deep schema goldens, mutation
+negatives, and dimensional guards.
 
 `python src/qkd/run.py` still prints `Min loss 27.7 dB | Fidelity 0.990` (verified).
 `python src/qkd/run_fibre.py` prints
@@ -369,9 +371,9 @@ optional `[qiskit]` extra in `pyproject.toml`.
 - `pass_profile` is retired. Medium-neutral per-point arrays live under `profile`;
   satellite-only arrays live under `geometry`; aggregates live under
   `profile.aggregates`.
-- The old pre-fibre `V2_REQUIRED_KEYS` stub in `schema.py` is retired. The active
-  recognizer is v2-only L1 shape validation. L2-L5 hardening remains deferred to the
-  schema-hardening track.
+- The old pre-fibre `V2_REQUIRED_KEYS` stub in `schema.py` is retired. PR-B initially
+  landed v2-only L1 shape recognition; PR-D later hardened the same current v2 artifact
+  with L2-L5 checks and provenance wiring.
 - The dashboard now reads `outputs/results.json` as v2 only. The stale root
   `results.json` fallback remains retired under the single-authoritative-pipeline
   invariant. The plot-image fallback remains only for the historical root PNG.
@@ -403,6 +405,34 @@ optional `[qiskit]` extra in `pyproject.toml`.
 - Satellite emission remains pinned by the PR-B stable hash
   `bcac8a7024ccd114a0ef5288466ef8ab43f08964d61dada8d1cc7bdef28c8962`.
 
+### PR-D — Deep schema validation and dimensional correction
+**Files:** `src/qkd/schema.py`, `src/qkd/mission.py`, `src/qkd/run_fibre.py`,
+`tests/test_schema.py`, `tests/test_fibre_sweep.py`, `docs/INTERFACES.md`,
+`docs/PR_D_SCHEMA_HARDENING.md`, `docs/SCHEMA_HARDENING_2B.md`, and this
+Development Record.
+
+- `schema.py` is now a v2 L1 recognizer plus deep validator. By default,
+  `validate_results_schema(...)` runs L1 structure, L2 finite type checks, L3 physical
+  ranges and vocabulary, L4 stored constants, L5 artifact algebra, then
+  `validate_provenance(...)`.
+- `detect_results_schema(...)` remains recognition-only, and
+  `validate_results_schema(..., deep=False)` / `load_results(..., deep=False)` preserve
+  L1-only behavior for routing and recognition tests.
+- `DECLARED_SCHEMA_EXTENSIONS: dict[str, set[str]]` is the extension mechanism:
+  undeclared top-level sections and undeclared keys inside known sections fail. Declared
+  extension leaves under provenance-covered data sections still require provenance tags.
+- D1 dimensional correction is implemented: `secure_key_yield_bits` is required and
+  L5-checked only for `time_s` artifacts. It is forbidden for `length_km` fibre sweeps.
+  `simulate_fibre_sweep(...)` disables yield integration, `run_fibre.py` omits the field,
+  and fibre provenance no longer carries a phantom yield tag.
+- L5 validates the artifact relationships encoded by v2 emission: loss from
+  transmittance, min-loss aggregates, mean fidelity, rounded average fidelity, temporal
+  yield integral, satellite min-loss geometry, fibre secure-distance bracket, Werner
+  fidelity under `physics_mode = "computed"`, and frame count.
+- `docs/PR_D_SCHEMA_HARDENING.md` is the active schema-hardening spec for the current
+  axis-agnostic v2 artifact. `docs/SCHEMA_HARDENING_2B.md` is preserved with a dated
+  supersession note because its field-level details were for the older pre-fibre stub.
+
 ---
 
 ## 3. Module & contract inventory
@@ -415,8 +445,8 @@ wrapper), `provenance.py`
 (observational field-origin tags plus the v2 data/provenance structural validator),
 `run.py` (satellite I/O and plotting only, with pre-write schema/provenance validation),
 `run_fibre.py` (fibre-sweep I/O and plotting only, with pre-write schema/provenance
-validation), and `schema.py` (v2-only L1 recognizer; the old orbital
-`V2_REQUIRED_KEYS` stub is retired).
+validation), and `schema.py` (v2-only L1 recognizer plus L2-L5 deep validator; the old
+orbital `V2_REQUIRED_KEYS` stub is retired).
 
 **Legacy decorative path — retired in PR0/2B-6a:**
 - `qkd_model.py` (repo root) — second entry point; deleted in PR0.
@@ -427,7 +457,9 @@ validation), and `schema.py` (v2-only L1 recognizer; the old orbital
 - Stale root `./results.json` (pre-nesting flat shape, no current writer) — `git rm` in PR0.
 - The retirement is documented in `docs/architecture/ADR-0001-single-authoritative-pipeline.md`.
 
-Docs: `docs/INTERFACES.md` (canonical v2 contract), `docs/SCHEMA_HARDENING_2B.md`,
+Docs: `docs/INTERFACES.md` (canonical v2 contract),
+`docs/PR_D_SCHEMA_HARDENING.md` (active deep-validator contract),
+`docs/SCHEMA_HARDENING_2B.md` (historical pre-fibre hardening spec),
 `docs/PHASE_2B4_DECOY_EVE.md`, `docs/PHASE_2B5_BACKGROUND_LIGHT.md`,
 `docs/PHASE_2B6_SEQUENCE.md` (PR0/PR1/PR2 sequence/spec history), and
 `docs/architecture/ADR-0001-single-authoritative-pipeline.md`.
@@ -443,7 +475,8 @@ absolute performance of any real link.
 `frames`, `average_fidelity`, `classical_limit`, and `plot`; it does not contain
 `remaining_entangled_resource_kb`. `profile.axis` names the independent axis
 (`time_s` for satellite passes), profile arrays hold medium-neutral quantities,
-`profile.aggregates` holds derived summary values, and `geometry` holds satellite-only
+`profile.aggregates` holds derived summary values including the temporal
+`secure_key_yield_bits` integral, and `geometry` holds satellite-only
 elevation/slant-range data. The `mission` section contains illustrative inputs
 (`pulse_repetition_rate_hz`, `intensities`, `detector`, `sky_condition`) and is covered
 by leaf-level `ILLUSTRATIVE` provenance.
@@ -453,7 +486,8 @@ by leaf-level `ILLUSTRATIVE` provenance.
 `provenance`, and `run_metadata`, but intentionally omits `geometry`. Its profile axis
 is `length_km`, and its fibre-specific aggregate
 `profile.aggregates.max_secure_distance_km` is accompanied by
-`profile.aggregates.secure_distance_bracket`.
+`profile.aggregates.secure_distance_bracket`. It intentionally omits
+`profile.aggregates.secure_key_yield_bits`; a length-axis integral is not a bit yield.
 
 ---
 
@@ -492,10 +526,9 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
 7. **PR-C — Fibre length sweep: complete.** `simulate_fibre_sweep` is the second caller
    of `simulate_profile`; `run_fibre.py` emits the v2 fibre artifact; the secure
    rate-distance curve and max-secure-distance bracket are tested.
-8. **Later hardening milestone — PR-D / L2-L5 schema hardening.**
-   `docs/SCHEMA_HARDENING_2B.md` remains the guide for L2 types, L3 ranges,
-   L4 constants, and L5 consistency. PR-B intentionally implements only the v2 shape
-   cutover and does not add those deeper guards.
+8. **PR-D — Deep schema validation and dimensional correction: complete.** The active
+   v2 schema validator now enforces L2-L5, declared-extension vocabulary, provenance
+   coverage, and the axis-conditional `secure_key_yield_bits` rule.
 
 **Further out (updated):** Phase 2C broader mission orchestration grows from the
 `simulate_pass` composition layer rather than inventing a second composition point.
@@ -506,9 +539,10 @@ hardware. The applied target (Quantum City municipal-fibre proposal) reuses this
 substrate by swapping the channel front-end; the CQN layer in that proposal maps onto
 Phase 2D.
 
-**Schema decision (standing):** v2.0 emission is now complete. L2–L5 validator hardening
-(`SCHEMA_HARDENING_2B.md`) remains a later PR. Do not mix deep schema hardening into
-physics or dashboard changes.
+**Schema decision (standing):** v2.0 emission and L2-L5 validator hardening are now
+complete for the current axis-agnostic artifact. Future schema expansion should use
+`DECLARED_SCHEMA_EXTENSIONS` deliberately and update `docs/PR_D_SCHEMA_HARDENING.md`
+with the new contract rather than silently accepting extras.
 
 **If picking up fresh:** read this + `docs/INTERFACES.md` + `docs/PHASE_2B6_SEQUENCE.md`;
 run the validation commands listed in §1; reconcile any module against the actual repo
@@ -518,6 +552,21 @@ file (not a remembered version) before editing; enumerate entry points / artifac
 ---
 
 ## Correction Log
+
+- **2026-07-05 (Rev 10).** Reconciled the record for PR-D / Deep Schema Validation
+  and Dimensional Correction. The queued `docs/SCHEMA_HARDENING_2B.md` concept was
+  retained but its pre-fibre field-level content is superseded by
+  `docs/PR_D_SCHEMA_HARDENING.md`. The active validator now performs L1 recognition,
+  L2 finite type checks, L3 ranges/vocabulary, L4 constants, L5 cross-field consistency,
+  and provenance validation by default. This revision also corrects the PR-C fibre
+  artifact defect: `profile.aggregates.secure_key_yield_bits` was emitted on a
+  `length_km` axis even though the computed quantity had units of bit-km/s, not bits.
+  Fibre artifacts now omit that field, and the validator forbids it for `length_km`
+  while requiring and checking it for `time_s`. Current suite count from real
+  validation: 142 passed with `--ignore=tests/test_teleportation_qiskit.py`; 163
+  passed with the qiskit extra available. Delta from Rev 9 is +22 collected tests,
+  slightly above the planned +13-17 range because the mutation suite is parametrized
+  across 17 negative cases and additional API/extension checks were added.
 
 - **2026-06-30 (Rev 9, 6f0527d).** Reconciled the record for PR-C / Fibre Length-Sweep.
   Fibre is now the second real caller of `mission.simulate_profile(...)`, using

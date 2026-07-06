@@ -108,7 +108,6 @@ class FibreSweepResult:
     fidelity: list[float]
     min_loss_db: float
     min_loss_index: int
-    secure_key_yield_bits: float
     mean_fidelity: float
     classical_bound: float
     werner_p_source: float
@@ -129,7 +128,7 @@ class ProfileResult:
     fidelity: list[float]
     min_loss_db: float
     min_loss_index: int
-    secure_key_yield_bits: float
+    secure_key_yield_bits: float | None
     mean_fidelity: float
     classical_bound: float
     werner_p_source: float
@@ -195,6 +194,7 @@ def simulate_fibre_sweep(config: FibreSweepConfig | None = None) -> FibreSweepRe
         detector=cfg.detector,
         pulse_repetition_rate_hz=cfg.pulse_repetition_rate_hz,
         sky_condition=DEFAULT_SKY_CONDITION,
+        integrate_yield=False,
     )
 
     return _fibre_result_from_profile(profile, cfg, fibre_config)
@@ -209,8 +209,14 @@ def simulate_profile(
     detector: DetectorParams,
     pulse_repetition_rate_hz: float,
     sky_condition: str,
+    integrate_yield: bool = True,
 ) -> ProfileResult:
-    """Compose an honest medium-neutral channel-state profile."""
+    """Compose an honest medium-neutral channel-state profile.
+
+    ``integrate_yield`` is for temporal axes only: it integrates
+    bits/pulse over a pulse clock and sample duration. Distance sweeps keep
+    secure-key rate as their figure of merit instead.
+    """
 
     if len(axis_values) != len(channel_states):
         raise ValueError("axis_values and channel_states must have the same length.")
@@ -248,10 +254,14 @@ def simulate_profile(
     fidelity = [result.fidelity for result in teleportation_results]
     classical_bound = teleportation_results[0].classical_bound
 
-    secure_key_yield_bits = _integrate_yield_bits(
-        axis_values,
-        secure_key_rate_per_pulse,
-        pulse_repetition_rate_hz,
+    secure_key_yield_bits = (
+        _integrate_yield_bits(
+            axis_values,
+            secure_key_rate_per_pulse,
+            pulse_repetition_rate_hz,
+        )
+        if integrate_yield
+        else None
     )
     mean_fidelity = sum(fidelity) / len(fidelity)
 
@@ -277,6 +287,8 @@ def _pass_result_from_profile(
     profile: ProfileResult,
     config: MissionConfig,
 ) -> PassResult:
+    if profile.secure_key_yield_bits is None:
+        raise ValueError("Temporal pass profiles must include secure_key_yield_bits.")
     return PassResult(
         time_s=profile.axis_values,
         elevation_deg=pass_geometry.elevation_deg,
@@ -316,7 +328,6 @@ def _fibre_result_from_profile(
         fidelity=profile.fidelity,
         min_loss_db=profile.min_loss_db,
         min_loss_index=profile.min_loss_index,
-        secure_key_yield_bits=profile.secure_key_yield_bits,
         mean_fidelity=profile.mean_fidelity,
         classical_bound=profile.classical_bound,
         werner_p_source=profile.werner_p_source,
@@ -510,7 +521,6 @@ def _fibre_provenance() -> dict[str, str]:
         "profile.fidelity": Provenance.SIMULATED.value,
         "profile.aggregates.min_loss_db": Provenance.DERIVED.value,
         "profile.aggregates.min_loss_axis_value": Provenance.DERIVED.value,
-        "profile.aggregates.secure_key_yield_bits": Provenance.DERIVED.value,
         "profile.aggregates.mean_fidelity": Provenance.DERIVED.value,
         "profile.aggregates.max_secure_distance_km": Provenance.DERIVED.value,
         "profile.aggregates.secure_distance_bracket.last_positive_length_km": (

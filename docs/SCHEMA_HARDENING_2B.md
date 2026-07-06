@@ -1,5 +1,11 @@
 # Schema Validator Hardening — Phase 2B Work-Package
 
+> **Supersession note — 2026-07-05 / PR-D.** The five-layer validator concept
+> and API shape from this document were retained, but the field-level content
+> below was written for the pre-fibre v2 stub and is superseded by
+> `docs/PR_D_SCHEMA_HARDENING.md` for the current axis-agnostic v2 artifact.
+> This file is preserved as historical design context.
+
 **Status:** specification, queued. **Do NOT implement during Phase 2A.**
 **Phase tag:** `[2B]` — lands *with* the `outputs/results.json` v1→v2.0 emission switchover.
 **Relationship to `INTERFACES.md`:** subordinate. `INTERFACES.md` §5 remains the
