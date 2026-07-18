@@ -75,6 +75,10 @@ The schema **names all three axes explicitly** so a physicist reading a result s
 exactly which design point it occupies, and so a future contributor knows where a new
 link plugs in.
 
+ADR-0003 extends this physical-simulation interface downstream with a composable
+LINK effect pipeline. It does not alter the composition core, v2 schema, or
+trust boundary defined here.
+
 ## What v2 builds vs. what v2 defers
 
 This is the honest line between physics-forward and speculative:

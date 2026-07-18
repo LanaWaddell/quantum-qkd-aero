@@ -76,10 +76,14 @@ development record carries dated corrections rather than silently rewriting hist
 - One authoritative composition layer (`mission.py`) -> one I/O layer (`run.py`); physics
   is computed in the composition, not the I/O.
 - Enforced provenance on every emitted quantity, validated before each write.
-- A pytest suite (**125 with the Qiskit extra, 104 without**) covering the physics and the
+- **Deep schema validation** — the v2 validator enforces L1 recognition plus L2 types,
+  L3 ranges/vocabulary, L4 constants, and L5 cross-field consistency by default before
+  every write, including the axis-conditional yield rule that keeps aggregates
+  dimensionally honest (`docs/PR_D_SCHEMA_HARDENING.md`).
+- A pytest suite (**163 with the Qiskit extra, 142 without**) covering the physics and the
   honesty guards (turbulence-independence, geometry coupling, decoy bounds,
   PNS-invisible-to-QBER, fidelity arch, fibre-contract flow, provenance enforcement,
-  determinism).
+  deep-schema goldens and mutation negatives, determinism).
 
 ## Architecture: the three-axis quantum-link model
 
@@ -99,6 +103,18 @@ so a reader sees exactly which design point it occupies and a contributor knows 
 new link plugs in. The axes are *named* now (cheap, and it prevents a flat-schema dead
 end); each is *built out* only when a second member earns it — the same
 anti-speculative-generality discipline applied throughout the project.
+
+Above this frame sits the **composable link-effect pipeline contract**
+(`docs/architecture/ADR-0003`, ratified 2026-07-17): source, channel, and detector
+effects compose into an `EffectiveLinkState` under explicit per-field rules,
+stochastic effects draw from hash-derived order-independent RNG streams for exact
+replay, operational controls are declared explicit inputs with feasibility coupling
+to the composed link state, and estimator-stage observables (QBER, secure-key rate)
+exist only after composition — never as per-effect fields. The ADR is a contract
+only: **LINK-1 is the active implementation lane**, and no LINK code exists yet. The
+ADR was ratified with its body unchanged after assessment against the field's
+consolidated time-bin review (see `docs/references/`), which independently validated
+the composition rules it defines.
 
 ## The medium-general channel layer (built & certified)
 
@@ -120,12 +136,15 @@ migration. The generalization was built and verified in sequence:
   distance curve** with **maximum secure distance** (~190 km on the default illustrative
   fibre) as the figure of merit.
 
-**Next / deferred:** schema hardening (L2–L5 type/range/constant/consistency validators, a
-separable robustness layer — `docs/SCHEMA_HARDENING_2B.md`); a **Phase 2D trust/coherence
-layer** reading the computed `PhysicsSignals` (QBER, decoy anomaly, CHSH/teleportation
-margins, loss, secure-key rate) from behind the physics wall — no trust field inside the
-physics modules; and **coherence-enhancement optimization** over the filtering levers
-(window, bandwidth, field of view) against signal loss.
+**Next / active:** the **LINK-1 workstream** — first evidence-gathering implementation
+lane under the ratified ADR-0003 contract, opening with two evidence-discharged
+composition rules (quadrature composition of independent temporal broadening;
+sin²(∆ϕ) low-order misalignment default) and the deferred fibre/PathProvider
+placement decision; a **Phase 2D trust/coherence layer** reading the computed
+`PhysicsSignals` (QBER, decoy anomaly, CHSH/teleportation margins, loss, secure-key
+rate) from behind the physics wall — no trust field inside the physics modules; and
+**coherence-enhancement optimization** over the filtering levers (window, bandwidth,
+field of view) against signal loss.
 
 ## Horizon
 
@@ -170,8 +189,11 @@ Active code is in `src/qkd/`: `channel.py` (atmospheric/free-space medium), `fib
 (fibre medium), `orbit.py`, `teleportation.py`, `chsh.py`, `bb84.py`, `eve.py`,
 `coherence.py`, `mission.py` (composition), `provenance.py` (enforced origin tags),
 `signals.py` (interface dataclasses), `run.py` (I/O), `schema.py`. The dashboard is in
-`dashboard.js`; tests in `tests/`. `docs/INTERFACES.md` is the canonical contract;
-`docs/architecture/` holds the ADRs; the development record
+`dashboard.js`; tests in `tests/`. `docs/INTERFACES.md` is the canonical contract and
+carries the document authority index; `docs/architecture/` holds the ADRs and the
+architecture/status map; `docs/GLOSSARY.md` holds the binding vocabulary and the
+community-translation boundary for public-facing artifacts; `docs/references/` holds
+literature reference digests and evidence memos; the development record
 (`docs/Quantum-QKD-Aero_Development_Record.md`) is the phase-by-phase handoff artifact.
 
 `01-Gate-Noise-Archive/` is preserved archival research (Bell-state preparation,
@@ -187,7 +209,10 @@ loss varies over a pass, how a PNS attack hides from QBER, how daylight degrades
 how fibre rate decays with distance — not the absolute performance of any particular real
 link. Per-module simplifications (circular orbit, plane-parallel airmass, asymptotic key
 rate, simplified accidentals model, dark-fibre / no-Raman assumption) are documented in
-the code.
+the code. Where independent literature values exist, physics validation targets are pinned
+to them rather than to self-referential baselines: `docs/references/` records the digests
+and evidence memos, most recently the consolidated time-bin review (Singh et al.,
+arXiv:2507.08102), assessed at ADR-0003 ratification with no amendment required.
 
 ## Research & challenge alignment
 

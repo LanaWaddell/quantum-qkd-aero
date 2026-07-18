@@ -1,13 +1,24 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
-> **REVISION 10 — updated 2026-07-05.** This revision records PR-D / Deep Schema
-> Validation and Dimensional Correction. The active v2 validator now runs L1
-> recognition plus L2 types, L3 ranges, L4 constants, L5 cross-field
-> consistency, and provenance validation by default. Fibre length sweeps no
-> longer emit `profile.aggregates.secure_key_yield_bits`; that aggregate is
-> required only for `time_s` artifacts and forbidden for `length_km` artifacts.
-> Historical corrections and superseded counts/statuses are preserved in the
-> Correction Log rather than repeated as current body facts.
+> **REVISION 12 — updated 2026-07-17.** This revision records LINK-0 completion:
+> ADR-0003 (composable link-effect pipeline) is **RATIFIED** by the PI with body
+> text unchanged, following an independent literature contact at ratification
+> (Singh et al., arXiv:2507.08102, Oblak group / UCalgary IQST); the evidence
+> memo concluded no amendment was required, and the deliberately deferred
+> §3.3.1 rules remain deferred to LINK-1, now with recorded evidence for their
+> discharge (quadrature composition of independent temporal broadening;
+> sin²(∆ϕ) low-order misalignment model). New reference documents live under
+> `docs/references/` (paper digest + ratification evidence memo) and
+> `docs/GLOSSARY.md` is added (binding vocabulary per ADR-0003 §6 plus the
+> community-translation boundary). This is a documentation-only revision: no
+> code, schema, or physics change; test counts are unchanged from Revision 11
+> (163 passed with qiskit; 142 with
+> `--ignore=tests/test_teleportation_qiskit.py`; delta 0, as planned). A scoped
+> follow-up (separate commit) adds two honesty declarations identified during
+> the literature review: the teleportation lane's ideal-BSM conditioning and
+> the implementation's implicit encoding assumption. **LINK-1 is now the active
+> lane.** Historical corrections and superseded counts/statuses are preserved
+> in the Correction Log rather than repeated as current body facts.
 
 **Scope of this document:** a phase-by-phase record of the Phase 2B physics build —
 what was implemented, how it was verified, the honesty guards in place, the file
@@ -50,6 +61,9 @@ length sweep that feeds fibre `ChannelState` values through the same core and em
 native v2 rate-distance artifact. PR-D hardens that artifact boundary: emitted v2 payloads
 now fail fast on impossible values, mismatched array dimensions, undeclared schema keys,
 dimensionally invalid aggregates, algebraic inconsistencies, or provenance drift.
+ADR-0003 then records the next architecture lane without implementing it: LINK is the
+future composable channel-physics layer downstream of ADR-0002's
+medium/topology/protocol frame.
 
 The discipline throughout otherwise holds: if a quantity isn't checked against a
 known-true value or a structural invariant, it isn't trusted — and verification
@@ -77,6 +91,7 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **PR-B** | **v2 output schema cutover (`link` / `profile` / `geometry`)** | ✅ committed in Rev 8 (cadab78) |
 | **PR-C** | **Fibre length sweep as second caller of `simulate_profile`** | ✅ committed in Rev 9 (6f0527d) |
 | **PR-D** | **Deep schema validation and dimensional correction** | ✅ committed |
+| **ADR-0003 / LINK-0** | **Composable link-effect pipeline architecture contract** | Ratified (2026-07-17) |
 
 **Test suite (current Rev-10 count):** with the qiskit extra available, the suite is
 **163 passed** (`qkd_env/bin/python -m pytest -q`). The base suite excluding
@@ -458,6 +473,10 @@ orbital `V2_REQUIRED_KEYS` stub is retired).
 - The retirement is documented in `docs/architecture/ADR-0001-single-authoritative-pipeline.md`.
 
 Docs: `docs/INTERFACES.md` (canonical v2 contract),
+`docs/architecture/ADR-0002-three-axis-quantum-link-model.md` (three-axis link frame),
+`docs/architecture/ADR-0003-composable-link-effect-pipeline.md` (ratification-ready
+LINK contract),
+`docs/architecture/quantum-qkd-aero-architecture-map.md` (architecture/status map),
 `docs/PR_D_SCHEMA_HARDENING.md` (active deep-validator contract),
 `docs/SCHEMA_HARDENING_2B.md` (historical pre-fibre hardening spec),
 `docs/PHASE_2B4_DECOY_EVE.md`, `docs/PHASE_2B5_BACKGROUND_LIGHT.md`,
@@ -529,8 +548,26 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
 8. **PR-D — Deep schema validation and dimensional correction: complete.** The active
    v2 schema validator now enforces L2-L5, declared-extension vocabulary, provenance
    coverage, and the axis-conditional `secure_key_yield_bits` rule.
+9. **ADR-0003 / LINK-0 — Composable link-effect pipeline: ratified (2026-07-17).**
+   The architecture contract in `docs/architecture/` is ratified with body text
+   unchanged; the ADR's status log records the review and evidence history
+   (arXiv:2507.08102 consulted at ratification; evidence memo concluded no
+   amendment required). Reference documents live under `docs/references/`
+   (paper digest + evidence memo) and `docs/GLOSSARY.md` carries the binding
+   vocabulary and community-translation boundary. LINK remains a new lane
+   distinct from PR-A/B/C/D and from ADR-0002's medium/topology/protocol
+   axes. LINK-1 and later remain future work; no `ChannelEffect`,
+   `GeometryProvider`, `ControlSpec`, `ChannelStack`, source module, test, or
+   schema field exists yet. LINK-1 opens with two evidence-discharged deferred
+   rules (quadrature composition for independent temporal broadening, paper
+   Eq. 28; sin²(∆ϕ) low-order misalignment default) plus the deferred
+   fibre/PathProvider placement decision. A separate scoped follow-up commit
+   adds the teleportation-lane ideal-BSM conditioning declaration and the
+   implicit encoding-assumption declaration.
 
-**Further out (updated):** Phase 2C broader mission orchestration grows from the
+**Further out (updated):** LINK-1 may add identity-only interfaces for composable link
+effects after ADR-0003 sign-off, with byte-identical empty/identity behavior as the
+first guard. Phase 2C broader mission orchestration grows from the
 `simulate_pass` composition layer rather than inventing a second composition point.
 Phase 2D trust/cognitive work reads `PhysicsSignals` and/or emitted physics outputs (the
 wall holds — no trust field in physics). Coherence-enhancement optimization can operate
@@ -552,6 +589,28 @@ file (not a remembered version) before editing; enumerate entry points / artifac
 ---
 
 ## Correction Log
+
+- **2026-07-17 (Rev 12).** Reconciled the record for LINK-0 / ADR-0003
+  ratification (documentation-only revision; no numerical facts superseded;
+  test counts unchanged at 163/142, delta 0). Superseded statuses preserved
+  here: the Revision 11 header summary read — ADR-0003 and the in-repo
+  architecture map added; ADR-0003 defines the future LINK workstream as a
+  ratification-ready architecture contract; no LINK code, composition-core,
+  v2-schema, or trust-boundary change. The phase-overview row and §4 item 9
+  previously read "Ratification-ready"; `docs/INTERFACES.md`'s document
+  authority index previously named ADR-0003 as ratification-ready (updated
+  to ratified in this revision's push). All of that state was true as of
+  2026-07-05 and is superseded only in status, not in substance.
+
+- **2026-07-05 (Rev 11).** Added ADR-0003 /
+  `docs/architecture/ADR-0003-composable-link-effect-pipeline.md` as the
+  ratification-ready contract for the future LINK workstream and added
+  `docs/architecture/quantum-qkd-aero-architecture-map.md` to the repo. The map
+  records LINK as a new lane, distinct from PR-A/B/C/D and from ADR-0002's
+  medium/topology/protocol axes. `docs/INTERFACES.md` now includes a document
+  authority index and names ADR-0003 as ratification-ready. This is a
+  documentation-only architecture update: no LINK source, tests, schema fields,
+  or `DECLARED_SCHEMA_EXTENSIONS` changes were added.
 
 - **2026-07-05 (Rev 10).** Reconciled the record for PR-D / Deep Schema Validation
   and Dimensional Correction. The queued `docs/SCHEMA_HARDENING_2B.md` concept was

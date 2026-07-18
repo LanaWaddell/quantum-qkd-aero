@@ -19,9 +19,35 @@ Every item below is tagged so implementation order stays clean:
 | `[2C]` | Orchestrate the mission | `mission.py` chains the calibrated modules |
 | `[2D]` | Derive trust/coherence | Aggregate physics signals into trust — **not before 2B** |
 
+The LINK workstream introduced by ADR-0003 is a separate architecture lane, not
+a Phase 2 tag and not a fourth ADR-0002 axis. LINK is the future composable
+source-channel-detector effects layer downstream of the current
+medium/topology/protocol design point.
+
 **Codex implements `[2A]` only** in the current pass. `[2B]`/`[2C]`/`[2D]`
 files may be *created as stubs with reserved names*, but their physics is
 not written yet.
+
+---
+
+## 0.1 Document authority index
+
+| Document | Holds | Authority |
+|---|---|---|
+| `docs/architecture/ADR-0001-single-authoritative-pipeline.md` | Single-authoritative-pipeline invariant and retired decorative path decision | Authoritative |
+| `docs/architecture/ADR-0002-three-axis-quantum-link-model.md` | Three-axis medium/topology/protocol frame for v2 quantum links | Authoritative |
+| `docs/architecture/ADR-0003-composable-link-effect-pipeline.md` | LINK workstream contract for composable link effects, controls, stochastic replay, and coherence-recovery vocabulary | Authoritative (ratified 2026-07-17) |
+| `docs/INTERFACES.md` | Current module/data contracts, transmittance ownership, provenance invariant, and v2 output shape | Authoritative |
+| `docs/PR_D_SCHEMA_HARDENING.md` | Active L2-L5 validator contract for current v2 artifacts | Authoritative |
+| `docs/SCHEMA_HARDENING_2B.md` | Historical pre-fibre hardening spec; layers/API retained, field content superseded | Historical |
+| `docs/architecture/quantum-qkd-aero-architecture-map.md` | Top-level architecture/status map across ADR axes, PR queue, LINK lane, and Phase 2D ladder | Status tracker |
+| `docs/GLOSSARY.md` | Binding vocabulary lookup (restates ADR-0003 §6) and community-translation boundary for public-facing artifacts | Reference (ADR-0003 §6 wins on disagreement) |
+| `docs/references/quantum-qkd-aero-ref-timebin-review-2507-08102.md` | Digest / paper proxy for Singh et al., arXiv:2507.08102 (time-bin review) | Reference (arXiv source wins on disagreement) |
+| `docs/references/quantum-qkd-aero-adr0003-evidence-memo-timebin-review.md` | Evidence memo mapping arXiv:2507.08102 onto the ADR-0003 ratification review; LINK-1 evidence for the deferred §3.3.1 rules | Reference |
+
+ADR-0003 records a contract only. LINK-1 and later may implement that contract,
+but this document does not introduce `ChannelEffect`, `GeometryProvider`,
+`ControlSpec`, `ChannelStack`, or LINK schema fields.
 
 ---
 
