@@ -600,7 +600,16 @@ file (not a remembered version) before editing; enumerate entry points / artifac
   previously read "Ratification-ready"; `docs/INTERFACES.md`'s document
   authority index previously named ADR-0003 as ratification-ready (updated
   to ratified in this revision's push). All of that state was true as of
-  2026-07-05 and is superseded only in status, not in substance.
+  2026-07-05 and is superseded only in status, not in substance. This entry
+  also records a Rev-11-era edit omitted from the Rev 11 log: ADR-0002
+  gained a four-line non-normative cross-reference noting that ADR-0003
+  extends its physical-simulation interface downstream without altering the
+  composition core, v2 schema, or trust boundary — no ADR-0002 decision
+  changed; the edit shipped in this revision's push. Post-push verification
+  (Claude, 2026-07-17): ratification commit `d62a52e` (ADR-0003 only,
+  single-hunk header diff vs. the frozen 2026-07-05 text — body
+  byte-identical); companion commit `8801f64` (eight files as planned);
+  tests 163/142 on a fresh clone, delta 0 confirmed.
 
 - **2026-07-05 (Rev 11).** Added ADR-0003 /
   `docs/architecture/ADR-0003-composable-link-effect-pipeline.md` as the
