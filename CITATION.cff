@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software in your research, please cite it as below."
+title: "Quantum-QKD-Aero: a verified quantum-link simulator"
+abstract: >-
+  A Python research sandbox for quantum key distribution and quantum
+  teleportation over satellite free-space and optical fibre channels. Physical
+  quantities are computed from first principles and checked against analytic
+  truths or structural invariants, under enforced provenance tagging and a
+  medium/topology/protocol channel model. Implements decoy-state BB84 with
+  Lo-Ma-Chen bounds and GLLP key rates, Werner-state teleportation fidelity,
+  CHSH violation, a photon-number-splitting eavesdropper, and background-light
+  coherence degradation.
+type: software
+authors:
+  - family-names: Waddell
+    given-names: Lana
+    orcid: "https://orcid.org/0009-0009-0199-9817"
+version: 0.2.0
+date-released: "2026-08-07"
+license: MIT
+repository-code: "https://github.com/LanaWaddell/quantum-qkd-aero"
+keywords:
+  - quantum key distribution
+  - decoy-state BB84
+  - quantum teleportation
+  - satellite quantum communication
+  - optical fibre
+  - quantum networking
+  - simulation
