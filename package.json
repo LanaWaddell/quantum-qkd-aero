@@ -1,17 +1,27 @@
 {
-  "dependencies": {
-    "express": "^5.2.1"
-  },
   "name": "quantum-qkd-aero",
-  "version": "1.0.0",
-  "description": "A Python-based R&D sandbox for simulating satellite-to-ground Quantum Key Distribution (QKD) and Entanglement-based communication protocols.",
-  "main": "index.js",
+  "version": "0.2.0",
+  "description": "Dashboard server for Quantum-QKD-Aero, a verified quantum-link simulator for QKD and teleportation over satellite free-space and optical fibre channels.",
+  "main": "dashboard.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node dashboard.js",
     "test": "pytest"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "quantum-key-distribution",
+    "qkd",
+    "quantum-networking",
+    "simulation",
+    "dashboard"
+  ],
+  "author": "Lana Waddell",
   "license": "MIT",
-  "type": "commonjs"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanaWaddell/quantum-qkd-aero.git"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
 }

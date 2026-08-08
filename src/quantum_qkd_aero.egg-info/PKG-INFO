@@ -1,3 +1,16 @@
+Metadata-Version: 2.4
+Name: quantum-qkd-aero
+Version: 0.2.0
+Summary: Satellite QKD and quantum teleportation simulation sandbox.
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+Requires-Dist: matplotlib
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Provides-Extra: qiskit
+Requires-Dist: qiskit; extra == "qiskit"
+
 # Quantum-QKD-Aero — a verified quantum-link simulator
 
 Quantum-QKD-Aero is a Python R&D sandbox for quantum key distribution and quantum
@@ -156,40 +169,31 @@ continuous-variable QKD (homodyne detection rather than photon counting). These 
 
 ## Workflow
 
-Set up the environment and install the package (dependencies are declared in
-`pyproject.toml`; requires Python ≥3.10):
-
-```
-python3 -m venv qkd_env
-source qkd_env/bin/activate
-python -m pip install -e .
-```
-
-Two optional extras — the dev extra adds pytest, the Qiskit extra enables the third
-independent teleportation-validation path:
-
-```
-python -m pip install -e ".[dev]"
-python -m pip install -e ".[qiskit]"
-```
-
 Run the simulator (writes `outputs/results.json` and the pass plot):
 
 ```
 python src/qkd/run.py
 ```
 
-Run the test suite — **142 tests, or 163 with the Qiskit extra installed**:
-
-```
-pytest
-```
-
 Launch the dashboard, then open `http://localhost:8080`:
 
 ```
-npm install
 npm start
+```
+
+Recreate the Python environment:
+
+```
+python3 -m venv qkd_env
+qkd_env/bin/python -m pip install -r requirements.txt
+qkd_env/bin/python src/qkd/run.py
+```
+
+Package-style development with the dev extra, and the optional Qiskit validation path:
+
+```
+python -m pip install -e ".[dev]"   # then: pytest
+python -m pip install -e ".[qiskit]"
 ```
 
 ## Code layout
@@ -231,12 +235,3 @@ Infrastructure), which proposed a Cognitive Quantum Network layer for adaptive,
 trust-aware QKD. This repository develops the verified physics-layer foundation — computed
 channel, decoy-state, and coherence models with monitored signals — on which such an
 adaptive trust layer (Phase 2D) would be built.
-
-## Licence & citation
-
-Released under the **MIT Licence** — see [LICENSE](LICENSE). The code is free to use,
-modify, and redistribute, including commercially, with attribution and without warranty.
-
-If you use Quantum-QKD-Aero in published work, please cite it. Citation metadata is in
-[CITATION.cff](CITATION.cff); GitHub renders it under "Cite this repository" in the
-sidebar.

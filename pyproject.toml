@@ -5,15 +5,31 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "quantum-qkd-aero"
 version = "0.2.0"
-description = "Satellite QKD and quantum teleportation simulation sandbox."
+description = "A verified quantum-link simulator for QKD and teleportation over satellite free-space and optical fibre channels."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
+authors = [
+    { name = "Lana Waddell" },
+]
+keywords = [
+    "quantum-key-distribution",
+    "qkd",
+    "bb84",
+    "decoy-state",
+    "quantum-teleportation",
+    "satellite-communications",
+    "quantum-networking",
+    "simulation",
+]
 dependencies = [
     "numpy",
     "matplotlib",
 ]
+
+[project.urls]
+Repository = "https://github.com/LanaWaddell/quantum-qkd-aero"
 
 [project.optional-dependencies]
 dev = [
