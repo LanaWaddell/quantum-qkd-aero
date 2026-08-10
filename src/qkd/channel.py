@@ -69,6 +69,23 @@ def geometric_transmittance(slant_range_km, beam_divergence_urad, rx_aperture_m)
     return 1.0 - math.exp(-2.0 * aperture_radius_m**2 / beam_radius_m**2)
 
 
+def resolved_atmosphere_config(atmosphere=None) -> dict:
+    """Merge ``atmosphere`` overrides onto ``DEFAULT_ATMOSPHERE`` (LINK-2, R2).
+
+    This is the single shared resolver: ``channel_state()`` below and
+    ``qkd.mission._production_link_effects()`` both consume it, so the
+    override-merge semantics live in exactly one place (``docs/LINK_2_PLAN.md``
+    §5, "one implementation, two consumers" -- eliminating config-resolution
+    drift structurally rather than testing around it). The merge semantics
+    are unchanged from the pre-LINK-2 inline behaviour this replaces.
+    """
+
+    cfg = dict(DEFAULT_ATMOSPHERE)
+    if atmosphere:
+        cfg.update(atmosphere)
+    return cfg
+
+
 def channel_state(
     elevation_deg,
     slant_range_km,
@@ -79,9 +96,7 @@ def channel_state(
 ):
     """Resolve geometric/atmospheric link inputs into a ChannelState."""
 
-    cfg = dict(DEFAULT_ATMOSPHERE)
-    if atmosphere:
-        cfg.update(atmosphere)
+    cfg = resolved_atmosphere_config(atmosphere)
 
     if eta_override is None:
         eta = (

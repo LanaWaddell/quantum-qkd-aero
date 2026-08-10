@@ -9,11 +9,17 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from qkd.bb84 import run_decoy_bb84
-from qkd.channel import channel_state
+from qkd.channel import channel_state, resolved_atmosphere_config
 from qkd.coherence import effective_werner_p_for_sky
+from qkd.effects import (
+    AtmosphericAbsorptionEffect,
+    DetectorQuantumEfficiencyEffect,
+    GeometricLossEffect,
+    SystemEfficiencyEffect,
+)
 from qkd.fibre import DEFAULT_FIBRE, fibre_channel_state
 from qkd.link import ChannelEffect, ChannelStack, TableGeometryProvider, apply_link_state
 from qkd.orbit import satellite_pass
@@ -147,20 +153,35 @@ def simulate_pass(
 ) -> PassResult:
     """Compose the honest pass from already-verified module functions.
 
-    ``link_effects`` is the LINK-1 opt-in seam (ADR-0003 §3.6/§7.1;
-    ``docs/LINK_1_PLAN.md`` §5, Option A / R2 shape). When omitted (the
-    default, ``None``), this function takes the exact baseline code path --
-    no ``GeometryProvider`` or ``ChannelStack`` is constructed at all, so
-    results are byte-for-byte identical to pre-LINK-1 behaviour. When
-    supplied (including an empty sequence), ``simulate_pass`` wraps *the
-    exact* ``SatellitePass`` it already built in a ``qkd.link.
-    TableGeometryProvider`` and constructs a ``qkd.link.ChannelStack`` from
-    it -- avoiding a second, independently constructed geometry (R2) -- and
-    evaluates the stack at the existing pass sample times with an explicit
-    ``sample_index`` per sample. Only the two link observables already
-    representable by the current estimator path -- ``transmittance_factor``
-    and ``efficiency_factor`` -- are folded via ``qkd.link.
-    apply_link_state``; any other non-identity observable raises.
+    **Stack-always (LINK-2, ``docs/LINK_2_PLAN.md`` §5, binding).** The
+    existing satellite system/atmospheric/geometric/detector-efficiency
+    factors are themselves migrated production ``ChannelEffect``s
+    (:mod:`qkd.effects`), assembled by :func:`_production_link_effects` in a
+    parity-pinned order and evaluated through the LINK-1 bridge
+    (``qkd.link.apply_link_state``) on every call -- there is no longer a
+    separate non-stack code path. ``link_effects`` (LINK-1's opt-in seam,
+    ADR-0003 §3.6/§7.1) supplies *additional* user effects appended after
+    the four production effects; ``link_effects=None`` (the default) and
+    ``link_effects=[]`` both mean "production effects only" and are
+    byte-identical to each other and to pre-LINK-2 default behaviour (LINK-2
+    plan §2.2, certified by ``tests/test_effects.py`` test 1's in-process
+    parity oracle). A user effect whose ``effect_id`` collides with one of
+    the four reserved production ids fails via LINK-1's existing
+    ``DuplicateEffectIdError``.
+
+    Flow: builds its one ``SatellitePass`` exactly as before; wraps that
+    exact object in ``qkd.link.TableGeometryProvider`` (no second geometry
+    object, R2); resolves atmosphere configuration via the single shared
+    ``qkd.channel.resolved_atmosphere_config`` resolver; assembles the
+    production effects plus any user ``link_effects`` into one
+    ``qkd.link.ChannelStack``; builds base channel states via
+    ``channel_state(..., eta_override=1.0)`` and a base detector via
+    ``dataclasses.replace(cfg.detector, detection_efficiency=1.0)`` so the
+    stack's left-associated product folds onto an identity base
+    (``1.0 * x == x`` exactly); evaluates the stack once per existing pass
+    sample with an explicit ``sample_index``; folds via the unchanged
+    ``apply_link_state``; and continues through the unchanged
+    profile/result/emission pipeline.
     """
 
     if eve is not None:
@@ -175,28 +196,35 @@ def simulate_pass(
         peak_elevation_deg=cfg.peak_elevation_deg,
         horizon_elevation_deg=cfg.horizon_elevation_deg,
     )
-    channel_states = [
+
+    resolved_atmosphere = resolved_atmosphere_config(cfg.atmosphere)
+    provider = TableGeometryProvider(pass_geometry)
+    effects: list[ChannelEffect] = _production_link_effects(
+        resolved_atmosphere, cfg.detector
+    ) + list(link_effects or [])
+    stack = ChannelStack(effects, provider, seed=link_seed)
+
+    base_channel_states = [
         channel_state(
             elevation_deg=elevation_deg,
             slant_range_km=slant_range_km,
             atmosphere=cfg.atmosphere,
+            eta_override=1.0,
         )
         for elevation_deg, slant_range_km in zip(
             pass_geometry.elevation_deg,
             pass_geometry.slant_range_km,
         )
     ]
+    base_detector = replace(cfg.detector, detection_efficiency=1.0)
 
-    detector = cfg.detector
-    if link_effects is not None:
-        channel_states, detector = _apply_link_effects(
-            pass_geometry=pass_geometry,
-            channel_states=channel_states,
-            detector=detector,
-            link_effects=link_effects,
-            link_seed=link_seed,
-            link_controls=link_controls,
-        )
+    channel_states, detector = _apply_link_stack(
+        pass_geometry=pass_geometry,
+        stack=stack,
+        channel_states=base_channel_states,
+        detector=base_detector,
+        link_controls=link_controls,
+    )
 
     profile = simulate_profile(
         pass_geometry.time_s,
@@ -211,26 +239,63 @@ def simulate_pass(
     return _pass_result_from_profile(pass_geometry, profile, cfg)
 
 
-def _apply_link_effects(
+def _production_link_effects(
+    resolved_atmosphere: Mapping[str, object], detector: DetectorParams
+) -> list[ChannelEffect]:
+    """Assemble the four fixed-ID production effects, in the parity-pinned order.
+
+    **The only place** the four reserved production ``effect_id``s
+    (``system_efficiency``, ``atmospheric_absorption``, ``geometric_loss``,
+    ``detector_qe``) and their registration order are assembled
+    (``docs/LINK_2_PLAN.md`` §5, binding). Order matters: ``ChannelStack``
+    folds ``transmittance_factor`` as a left-associated product starting
+    from ``1.0``, so registering
+    ``[system_efficiency, atmospheric_absorption, geometric_loss]`` in that
+    order reproduces ``((1.0 * s) * a) * g == (s * a) * g`` bitwise -- the
+    plan §2.2 parity contract. ``detector_qe`` folds independently into
+    ``efficiency_factor`` and is order-insensitive with respect to the
+    channel-side product, but is kept last, after the three channel-side
+    effects, as the pinned canonical order.
+
+    A future production-effect insertion (e.g. a LINK-3 Doppler effect) must
+    not be spliced into the existing four without a new parity argument
+    written down first (plan §7 risk register) -- appending after
+    ``geometric_loss`` and before any user ``link_effects`` is the default
+    presumption, not an automatic license to skip re-deriving parity.
+    """
+
+    return [
+        SystemEfficiencyEffect(system_efficiency=resolved_atmosphere["system_efficiency"]),
+        AtmosphericAbsorptionEffect(
+            zenith_optical_depth=resolved_atmosphere["zenith_optical_depth"]
+        ),
+        GeometricLossEffect(
+            beam_divergence_urad=resolved_atmosphere["beam_divergence_urad"],
+            rx_aperture_m=resolved_atmosphere["rx_aperture_m"],
+        ),
+        DetectorQuantumEfficiencyEffect(detection_efficiency=detector.detection_efficiency),
+    ]
+
+
+def _apply_link_stack(
     *,
     pass_geometry,
+    stack: ChannelStack,
     channel_states: list[ChannelState],
     detector: DetectorParams,
-    link_effects: Sequence[ChannelEffect],
-    link_seed: int | None,
     link_controls: Mapping[str, float] | None,
 ) -> tuple[list[ChannelState], DetectorParams]:
-    """Evaluate ``link_effects`` at the mission's own pass samples and fold them in.
+    """Evaluate ``stack`` at the mission's own pass samples and fold it in.
 
     The mission shares a single ``DetectorParams`` across every sample in a
     pass profile (``simulate_profile`` takes one ``detector``, not a
-    per-sample list); LINK-1 has no effect that varies ``efficiency_factor``
-    by time, so this raises rather than silently collapsing a genuinely
-    sample-varying detector efficiency down to one arbitrary sample.
+    per-sample list). LINK-2's production effects are all time-constant on
+    the detector side (plan §5), so this guard never fires for them; it is
+    retained unchanged from LINK-1 for any user effect that would vary
+    ``efficiency_factor`` by time -- raising rather than silently collapsing
+    a genuinely sample-varying detector efficiency down to one arbitrary
+    sample.
     """
-
-    provider = TableGeometryProvider(pass_geometry)
-    stack = ChannelStack(list(link_effects), provider, seed=link_seed)
 
     new_channel_states: list[ChannelState] = []
     resolved_detector: DetectorParams | None = None
