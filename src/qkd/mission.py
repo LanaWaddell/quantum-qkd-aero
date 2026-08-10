@@ -8,12 +8,14 @@ one caller. It introduces no new physics and performs no I/O.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from qkd.bb84 import run_decoy_bb84
 from qkd.channel import channel_state
 from qkd.coherence import effective_werner_p_for_sky
 from qkd.fibre import DEFAULT_FIBRE, fibre_channel_state
+from qkd.link import ChannelEffect, ChannelStack, TableGeometryProvider, apply_link_state
 from qkd.orbit import satellite_pass
 from qkd.provenance import Provenance
 from qkd.signals import ChannelState, DetectorParams
@@ -135,8 +137,31 @@ class ProfileResult:
     pulse_repetition_rate_hz: float
 
 
-def simulate_pass(config: MissionConfig | None = None, *, eve=None) -> PassResult:
-    """Compose the honest pass from already-verified module functions."""
+def simulate_pass(
+    config: MissionConfig | None = None,
+    *,
+    eve=None,
+    link_effects: Sequence[ChannelEffect] | None = None,
+    link_seed: int | None = None,
+    link_controls: Mapping[str, float] | None = None,
+) -> PassResult:
+    """Compose the honest pass from already-verified module functions.
+
+    ``link_effects`` is the LINK-1 opt-in seam (ADR-0003 §3.6/§7.1;
+    ``docs/LINK_1_PLAN.md`` §5, Option A / R2 shape). When omitted (the
+    default, ``None``), this function takes the exact baseline code path --
+    no ``GeometryProvider`` or ``ChannelStack`` is constructed at all, so
+    results are byte-for-byte identical to pre-LINK-1 behaviour. When
+    supplied (including an empty sequence), ``simulate_pass`` wraps *the
+    exact* ``SatellitePass`` it already built in a ``qkd.link.
+    TableGeometryProvider`` and constructs a ``qkd.link.ChannelStack`` from
+    it -- avoiding a second, independently constructed geometry (R2) -- and
+    evaluates the stack at the existing pass sample times with an explicit
+    ``sample_index`` per sample. Only the two link observables already
+    representable by the current estimator path -- ``transmittance_factor``
+    and ``efficiency_factor`` -- are folded via ``qkd.link.
+    apply_link_state``; any other non-identity observable raises.
+    """
 
     if eve is not None:
         raise NotImplementedError("Eve injection is out of scope for Phase 2B-6b.")
@@ -162,17 +187,72 @@ def simulate_pass(config: MissionConfig | None = None, *, eve=None) -> PassResul
         )
     ]
 
+    detector = cfg.detector
+    if link_effects is not None:
+        channel_states, detector = _apply_link_effects(
+            pass_geometry=pass_geometry,
+            channel_states=channel_states,
+            detector=detector,
+            link_effects=link_effects,
+            link_seed=link_seed,
+            link_controls=link_controls,
+        )
+
     profile = simulate_profile(
         pass_geometry.time_s,
         channel_states,
         intensities=cfg.intensities,
         n_pulses=cfg.n_pulses,
-        detector=cfg.detector,
+        detector=detector,
         pulse_repetition_rate_hz=cfg.pulse_repetition_rate_hz,
         sky_condition=cfg.sky_condition,
     )
 
     return _pass_result_from_profile(pass_geometry, profile, cfg)
+
+
+def _apply_link_effects(
+    *,
+    pass_geometry,
+    channel_states: list[ChannelState],
+    detector: DetectorParams,
+    link_effects: Sequence[ChannelEffect],
+    link_seed: int | None,
+    link_controls: Mapping[str, float] | None,
+) -> tuple[list[ChannelState], DetectorParams]:
+    """Evaluate ``link_effects`` at the mission's own pass samples and fold them in.
+
+    The mission shares a single ``DetectorParams`` across every sample in a
+    pass profile (``simulate_profile`` takes one ``detector``, not a
+    per-sample list); LINK-1 has no effect that varies ``efficiency_factor``
+    by time, so this raises rather than silently collapsing a genuinely
+    sample-varying detector efficiency down to one arbitrary sample.
+    """
+
+    provider = TableGeometryProvider(pass_geometry)
+    stack = ChannelStack(list(link_effects), provider, seed=link_seed)
+
+    new_channel_states: list[ChannelState] = []
+    resolved_detector: DetectorParams | None = None
+    for sample_index, (t, base_channel) in enumerate(
+        zip(pass_geometry.time_s, channel_states)
+    ):
+        state = stack.evaluate(t, controls=link_controls, sample_index=sample_index)
+        new_channel, new_detector = apply_link_state(
+            state, channel=base_channel, detector=detector
+        )
+        new_channel_states.append(new_channel)
+        if resolved_detector is None:
+            resolved_detector = new_detector
+        elif new_detector.detection_efficiency != resolved_detector.detection_efficiency:
+            raise ValueError(
+                "link_effects produced a sample-varying detector efficiency; "
+                "simulate_pass shares one DetectorParams across the whole "
+                "pass profile and cannot represent per-sample detector "
+                "variation (LINK-1 scope; see LINK_1_PLAN.md)."
+            )
+
+    return new_channel_states, resolved_detector if resolved_detector is not None else detector
 
 
 def simulate_fibre_sweep(config: FibreSweepConfig | None = None) -> FibreSweepResult:
