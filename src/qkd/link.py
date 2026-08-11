@@ -169,11 +169,53 @@ class DetectorObservables:
 
 
 @dataclass(frozen=True)
+class SourceObservables:
+    """Physical observables composing into source-partition territory (ADR-0003 §2; LINK-5 plan §1.1).
+
+    ADR-0003 §2 names "source, channel, and detector effects" as the three
+    partitions; LINK-1 through LINK-4 implemented only the channel and
+    detector sides. LINK-5 adds the source side, starting with one field.
+
+    **Epistemic contract (LINK-5 plan §1.2, R1 -- binding, verbatim):**
+    "``intensity_factor`` is the **realized physical** common-mode
+    multiplier on the nominal mean photon numbers for the modeled epoch. It
+    is **latent simulation truth** unless a separate monitoring/
+    characterization interface declares what information is available to
+    the protocol. Presence in ``EffectiveLinkState`` does not authorize an
+    estimator to observe the exact value."
+
+    This is the ADR-0002 wall applied at the estimator's information
+    surface: folding realized latent factors into the estimator would grant
+    oracle knowledge a real system obtains only through source monitoring or
+    calibration. Decoy-state security can be invalidated by source-intensity
+    correlations and unmodeled source errors (Sixto, Zapatero & Curty,
+    arXiv:2206.06700; Trefilov et al., arXiv:2411.00709) -- the boundary is
+    load-bearing, not defensive wording.
+
+    Structurally enforced, not merely documented: ``intensity_factor`` is
+    unreachable through :class:`~qkd.signals.ChannelState`,
+    :class:`~qkd.signals.DetectorParams`, or any current estimator path, and
+    :func:`apply_link_state` bridge-rejects every non-identity value (plan
+    §1.4). See ``qkd.effects``' module docstring, "LINK-6 source/detector-
+    consumption gate" (LINK-5 plan §3), for what must be declared before
+    this value may be folded into gains, errors, or key rate.
+    """
+
+    intensity_factor: float = 1.0
+
+
+@dataclass(frozen=True)
 class LinkObservables:
-    """A single effect's evaluated output at ``(t, geom)`` (ADR-0003 §3.2, §3.3)."""
+    """A single effect's evaluated output at ``(t, geom)`` (ADR-0003 §3.2, §3.3).
+
+    ``source`` is the LINK-5 addition (plan §1.1): a backward-compatible
+    defaulted field -- existing ``LinkObservables(channel=..., detector=...)``
+    constructions carry an identity :class:`SourceObservables` unchanged.
+    """
 
     channel: ChannelObservables = ChannelObservables()
     detector: DetectorObservables = DetectorObservables()
+    source: SourceObservables = SourceObservables()
 
 
 @dataclass(frozen=True)
@@ -233,10 +275,18 @@ class EffectiveLinkState:
     Feeds the existing ``ChannelState`` + ``DetectorParams`` construction via
     :func:`apply_link_state`; it is not a sibling API and computes no gains,
     QBER, or key rate.
+
+    ``source`` is the LINK-5 addition (plan §1.1): a backward-compatible
+    defaulted field -- existing ``EffectiveLinkState(channel, detector)``
+    constructions carry an identity :class:`SourceObservables` unchanged.
+    ``EffectiveLinkState`` may know this simulated truth; per
+    :class:`SourceObservables`'s epistemic contract, that presence alone
+    does not authorize an estimator to observe it.
     """
 
     channel: ChannelObservables
     detector: DetectorObservables
+    source: SourceObservables = SourceObservables()
 
 
 # ---------------------------------------------------------------------------
@@ -404,12 +454,35 @@ _DETECTOR_NONNEGATIVE_FIELDS = ("dark_count_rate_hz", "dead_time_s")
 
 _CORRELATION_AWARE_CHANNEL_FIELDS = frozenset({"background_rate_hz", "timing_jitter_s"})
 
-_UNIT_MEAN_FADING_RECOGNIZED_FIELDS = frozenset({"transmittance_factor"})
-"""Fields a LINK-4 ``unit_mean_fading_fields`` declaration may name (plan §4, R5).
+_UNIT_MEAN_FADING_RECOGNIZED_FIELDS = frozenset({"transmittance_factor", "intensity_factor"})
+"""Fields a ``unit_mean_fading_fields`` declaration may name (LINK-4 plan §4, R5;
+LINK-5 plan §1.4, R5 -- partition-aware extension).
 
-Only ``"transmittance_factor"`` is recognized in LINK-4; an unrecognized
-name raises at :class:`ChannelStack` construction (never silently ignored).
+``"transmittance_factor"`` (LINK-4) and ``"intensity_factor"`` (LINK-5) are
+recognized; an unrecognized name raises at :class:`ChannelStack`
+construction (never silently ignored).
 """
+
+_UNIT_MEAN_FADING_FIELD_PARTITION: dict[str, str] = {
+    "transmittance_factor": "channel",
+    "intensity_factor": "source",
+}
+"""Maps each recognized ``unit_mean_fading_fields`` name to its typed path
+(LINK-5 plan §1.4, R5 -- partition-aware resolution, binding).
+
+``"transmittance_factor"`` names ``channel.transmittance_factor``;
+``"intensity_factor"`` names ``source.intensity_factor``. A declaration for
+one field relaxes validation for *that field on that effect only*; it never
+relaxes the other partition's field on the same effect, and never relaxes
+any field on a different effect (see
+:meth:`ChannelStack._resolve_unit_mean_fading_declarations`).
+"""
+
+_EMPTY_UNIT_MEAN_FADING_DECLARATION: dict[str, frozenset[str]] = {
+    "channel": frozenset(),
+    "source": frozenset(),
+}
+"""The per-partition relaxation an effect that never declares carries (LINK-5 plan §1.4)."""
 
 
 def _validate_channel_observables(
@@ -476,6 +549,45 @@ def _validate_detector_observables(obs: DetectorObservables, effect_id: str) -> 
             )
 
 
+_SOURCE_UNIT_INTERVAL_FIELDS = ("intensity_factor",)
+
+
+def _validate_source_observables(
+    obs: SourceObservables,
+    effect_id: str,
+    *,
+    relaxed_fields: frozenset[str] = frozenset(),
+) -> None:
+    """Validate one effect's raw source observables (LINK-5 plan §1.4, R5).
+
+    Mirrors :func:`_validate_channel_observables`'s relaxation shape, on the
+    source partition: ``relaxed_fields`` is the effect's own cached,
+    construction-validated ``unit_mean_fading_fields`` declaration,
+    restricted to the source partition (empty for effects that never
+    declare it, and for effects that declare only ``transmittance_factor``
+    -- the partition-aware resolution, plan §1.4, R5). For a field named
+    there, the unit-interval check below is replaced with finite-and->=0 (a
+    unit-mean fading factor is legitimately > 1); every other field, and
+    every other effect, keeps the strict ``[0, 1]`` bound.
+    """
+
+    for field_name in _SOURCE_UNIT_INTERVAL_FIELDS:
+        value = getattr(obs, field_name)
+        if field_name in relaxed_fields:
+            if not math.isfinite(value) or value < 0.0:
+                raise InvalidObservableError(
+                    f"Effect {effect_id!r} produced source.{field_name}={value!r}, "
+                    "which must be finite and >= 0 (relaxed via a declared "
+                    "unit_mean_fading_fields entry, LINK-5 plan §1.4)."
+                )
+            continue
+        if not math.isfinite(value) or not (0.0 <= value <= 1.0):
+            raise InvalidObservableError(
+                f"Effect {effect_id!r} produced source.{field_name}={value!r}, "
+                "which must be finite and in [0, 1]."
+            )
+
+
 class ChannelStack:
     """Composes ``LinkObservables`` across effects -- nothing more (ADR-0003 §3.4).
 
@@ -485,13 +597,16 @@ class ChannelStack:
     discipline, deliberately not the same object) and rejects duplicate
     ``effect_id``/control names (R5). Construction also validates and caches
     each effect's optional ``unit_mean_fading_fields`` declaration
-    (``docs/LINK_4_PLAN.md`` §4, R5) -- see
+    (``docs/LINK_4_PLAN.md`` §4, R5; ``docs/LINK_5_PLAN.md`` §1.4, R5 --
+    partition-aware extension to the source side) -- see
     :meth:`_resolve_unit_mean_fading_declarations`. Evaluation composes per
-    the §3.3.1/§4 table, validates every effect's raw observables before
-    composing (relaxing the declaring effect's declared field(s) from
-    ``[0, 1]`` to finite-and->=0), and derives each effect's RNG stream via
-    :func:`_child_rng` -- order-independent by construction, never
-    referencing registration order.
+    the §3.3.1/§4 table plus the LINK-5 source partition (``source.
+    intensity_factor`` composes as a product, LINK-5 plan §1.4), validates
+    every effect's raw observables before composing (relaxing the declaring
+    effect's declared field(s) from ``[0, 1]`` to finite-and->=0, in
+    whichever partition it was declared for), and derives each effect's RNG
+    stream via :func:`_child_rng` -- order-independent by construction,
+    never referencing registration order.
 
     **Timing note (binding honesty, LINK-4 plan §4.4):** the existing
     ``correlated_fields`` guard (below) validates at evaluation time; the
@@ -538,12 +653,13 @@ class ChannelStack:
                 registry[spec.name] = spec
         self._controls: dict[str, ControlSpec] = registry
 
-        self._unit_mean_fading_declarations: dict[str, frozenset[str]] = (
+        self._unit_mean_fading_declarations: dict[str, dict[str, frozenset[str]]] = (
             self._resolve_unit_mean_fading_declarations()
         )
 
-    def _resolve_unit_mean_fading_declarations(self) -> dict[str, frozenset[str]]:
-        """Validate and cache each effect's ``unit_mean_fading_fields`` (plan §4, R5).
+    def _resolve_unit_mean_fading_declarations(self) -> dict[str, dict[str, frozenset[str]]]:
+        """Validate and cache each effect's ``unit_mean_fading_fields`` (LINK-4 plan
+        §4, R5; LINK-5 plan §1.4, R5 -- partition-aware extension).
 
         Duck-typed and optional, like ``correlated_fields``/``controls``:
         effects that never set it are treated as declaring nothing (empty
@@ -552,11 +668,22 @@ class ChannelStack:
         outright (it would otherwise iterate character-by-character) -- and
         every name must be recognized (``_UNIT_MEAN_FADING_RECOGNIZED_FIELDS``);
         an unrecognized name raises at construction, never silently ignored.
-        Validated once here and cached per ``effect_id`` so evaluation reads
-        a plain dict lookup.
+
+        **Partition-aware resolution (LINK-5 plan §1.4, R5, binding):** each
+        recognized name is resolved through ``_UNIT_MEAN_FADING_FIELD_PARTITION``
+        to its typed path -- ``"transmittance_factor"`` into the effect's
+        ``"channel"`` relaxation set, ``"intensity_factor"`` into its
+        ``"source"`` relaxation set. A declaration for one field never
+        relaxes the other partition's field on the same effect (the
+        same-effect cross-check, LINK-5 plan §4 test 7); the two-key
+        per-effect dict cached here is what
+        :meth:`ChannelStack.evaluate` passes, one key per validator, to
+        :func:`_validate_channel_observables` /
+        :func:`_validate_source_observables`. Validated once here and
+        cached per ``effect_id`` so evaluation reads a plain dict lookup.
         """
 
-        declarations: dict[str, frozenset[str]] = {}
+        declarations: dict[str, dict[str, frozenset[str]]] = {}
         for effect in self._effects:
             declared = getattr(effect, "unit_mean_fading_fields", None)
             if declared is None:
@@ -587,9 +714,18 @@ class ChannelStack:
                     f"Effect {effect.effect_id!r} declared unrecognized "
                     f"unit_mean_fading_fields {sorted(unrecognized)}; only "
                     f"{sorted(_UNIT_MEAN_FADING_RECOGNIZED_FIELDS)} are "
-                    "recognized in LINK-4."
+                    "recognized."
                 )
-            declarations[effect.effect_id] = names
+            channel_names = {
+                name for name in names if _UNIT_MEAN_FADING_FIELD_PARTITION[name] == "channel"
+            }
+            source_names = {
+                name for name in names if _UNIT_MEAN_FADING_FIELD_PARTITION[name] == "source"
+            }
+            declarations[effect.effect_id] = {
+                "channel": frozenset(channel_names),
+                "source": frozenset(source_names),
+            }
         return declarations
 
     @property
@@ -628,6 +764,7 @@ class ChannelStack:
         afterpulse_contributors = 0
         dead_time_value = 0.0
         dead_time_contributors = 0
+        intensity_product = 1.0
 
         for effect in self._effects:
             context = EffectEvaluationContext(
@@ -636,13 +773,16 @@ class ChannelStack:
                 rng_for=self._rng_for_factory(effect.effect_id, sample_index),
             )
             observables = effect.evaluate(t, geom, context=context)
-            relaxed_fields = self._unit_mean_fading_declarations.get(
-                effect.effect_id, frozenset()
+            declaration = self._unit_mean_fading_declarations.get(
+                effect.effect_id, _EMPTY_UNIT_MEAN_FADING_DECLARATION
             )
             _validate_channel_observables(
-                observables.channel, effect.effect_id, relaxed_fields=relaxed_fields
+                observables.channel, effect.effect_id, relaxed_fields=declaration["channel"]
             )
             _validate_detector_observables(observables.detector, effect.effect_id)
+            _validate_source_observables(
+                observables.source, effect.effect_id, relaxed_fields=declaration["source"]
+            )
 
             correlated_fields = frozenset(getattr(effect, "correlated_fields", ()))
             if correlated_fields - _CORRELATION_AWARE_CHANNEL_FIELDS:
@@ -706,6 +846,21 @@ class ChannelStack:
                     )
                 dead_time_value = det.dead_time_s
 
+            intensity_product *= observables.source.intensity_factor
+
+        # Composed-source overflow backstop (LINK-5 plan §1.4, R4): each
+        # contributing factor was already individually validated finite and
+        # >= 0 above, so the product cannot go negative, but a long chain of
+        # large (declared unit-mean) factors can still overflow to inf --
+        # rejected here rather than silently emitted or caught only later,
+        # downstream, by a consumer that may not exist yet.
+        if not math.isfinite(intensity_product) or intensity_product < 0.0:
+            raise InvalidObservableError(
+                f"Composed source.intensity_factor={intensity_product!r} is not "
+                "finite and >= 0 (product-of-effects overflow backstop, "
+                "LINK-5 plan §1.4)."
+            )
+
         state = EffectiveLinkState(
             channel=ChannelObservables(
                 transmittance_factor=transmittance_product,
@@ -720,6 +875,7 @@ class ChannelStack:
                 afterpulse_prob=afterpulse_value,
                 dead_time_s=dead_time_value,
             ),
+            source=SourceObservables(intensity_factor=intensity_product),
         )
 
         self._validate_control_feasibility(resolved_controls, state)
@@ -822,6 +978,15 @@ _IDENTITY_DETECTOR_FIELDS: dict[str, float] = {
     "afterpulse_prob": 0.0,
     "dead_time_s": 0.0,
 }
+_IDENTITY_SOURCE_FIELDS: dict[str, float] = {
+    "intensity_factor": 1.0,
+}
+"""LINK-5 plan §1.4: extends the non-identity rejection set with
+``source.intensity_factor`` -- the essential anti-smuggling boundary
+(``SourceObservables``'s epistemic contract, plan §1.2). Together with the
+two dicts above, every LINK-5 observable (``source.intensity_factor``,
+``detector.afterpulse_prob``, ``detector.dead_time_s``) is bridge-rejected.
+"""
 
 
 def apply_link_state(
@@ -839,9 +1004,13 @@ def apply_link_state(
     non-identity observable -- ``background_rate_hz``, ``dark_count_rate_hz``
     (no defined gate window yet), ``misalignment_error``,
     ``frequency_offset_hz``, ``timing_jitter_s``, ``afterpulse_prob``,
-    ``dead_time_s`` -- is unrepresentable by the current estimator path and
-    raises :class:`UnsupportedLinkObservableError` naming the field; nothing
-    is silently dropped.
+    ``dead_time_s``, and (LINK-5, plan §1.4) ``source.intensity_factor`` --
+    is unrepresentable by the current estimator path and raises
+    :class:`UnsupportedLinkObservableError` naming the field; nothing is
+    silently dropped. ``source.intensity_factor`` stays bridge-rejected
+    until the ``qkd.effects`` "LINK-6 source/detector-consumption gate" (plan
+    §3) is satisfied -- ``SourceObservables``'s epistemic contract (plan
+    §1.2) is the reason this rejection exists, not an incidental gap.
     """
 
     for field_name, identity_value in _IDENTITY_CHANNEL_FIELDS.items():
@@ -856,6 +1025,13 @@ def apply_link_state(
         if value != identity_value:
             raise UnsupportedLinkObservableError(
                 f"detector.{field_name}={value!r} is not representable by the "
+                f"current estimator path (identity={identity_value})."
+            )
+    for field_name, identity_value in _IDENTITY_SOURCE_FIELDS.items():
+        value = getattr(state.source, field_name)
+        if value != identity_value:
+            raise UnsupportedLinkObservableError(
+                f"source.{field_name}={value!r} is not representable by the "
                 f"current estimator path (identity={identity_value})."
             )
 

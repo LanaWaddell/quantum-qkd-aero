@@ -40,6 +40,30 @@ and the missing field -- these two effects are satellite-medium members, but
 the :class:`~qkd.link.PassGeometry` contract stays medium-neutral. All four
 effects ignore ``context`` -- no controls, no RNG ("a constant is a function
 that ignores t").
+
+LINK-6 source/detector-consumption gate (LINK-5, ``docs/LINK_5_PLAN.md``
+§3 -- consolidated, binding)
+------------------------------------------------------------------------
+LINK-5 adds three source/detector parameter owners below --
+:class:`MuFluctuationEffect`, :class:`DetectorAfterpulsingEffect`,
+:class:`DetectorDeadTimeEffect` -- none of which are folded into gains,
+QBER, or key rate by this module; ``qkd.link.apply_link_state`` bridge-
+rejects all three (``source.intensity_factor``, ``detector.afterpulse_prob``,
+``detector.dead_time_s``) as non-identity observables. The consumption gate
+those three parameters must clear before any future LINK-6 work folds them
+into an estimator (plan §3, verbatim):
+
+    "Before any LINK-5 observable is folded into gains, errors, or key
+    rate, LINK-6 must declare: (1) the realized-versus-observed
+    source-intensity information model; (2) a decoy-state proof valid for
+    the selected intensity uncertainty and correlation assumptions; (3)
+    the detector dead-time response convention; (4) the afterpulse
+    conditioning/window or kernel model; and (5) the interaction order or
+    joint model for dead time and afterpulsing. Until all applicable items
+    are present, non-identity LINK-5 observables remain bridge-rejected."
+
+See also :class:`qkd.link.SourceObservables`'s epistemic contract (plan
+§1.2) for the source side of this same boundary.
 """
 
 from __future__ import annotations
@@ -54,6 +78,7 @@ from qkd.link import (
     EffectEvaluationContext,
     LinkObservables,
     PassGeometry,
+    SourceObservables,
 )
 
 
@@ -585,3 +610,230 @@ class PointingJitterEffect:
         return LinkObservables(
             channel=ChannelObservables(transmittance_factor=transmittance_factor)
         )
+
+
+# ---------------------------------------------------------------------------
+# LINK-5 -- source-partition and detector-parameter effects
+# (docs/LINK_5_PLAN.md, v2 approved). None join the production stack; all
+# three are bridge-rejected by ``qkd.link.apply_link_state`` until the
+# "LINK-6 source/detector-consumption gate" above is satisfied. Fixed
+# canonical IDs: ``mu_fluctuation``, ``detector_afterpulsing``,
+# ``detector_dead_time`` (plan §2).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MuFluctuationEffect:
+    """Epoch-common multiplicative source-intensity fluctuation (LINK-5, plan §1, §2.1).
+
+    **Epoch-common semantics (LINK-5 plan §1.3, R2 -- binding, verbatim):**
+    "Each indexed evaluation draws one common multiplicative source factor
+    for the complete modeled mission epoch. The factor scales every nonzero
+    nominal intensity setting in that epoch. Multiplication preserves exact
+    zero (a true vacuum setting stays zero; a nonzero nominal 'vacuum' is
+    scaled like the other settings). It does not model pulse-resolved
+    fluctuations, setting-conditioned error distributions, or correlations
+    with previous intensity choices. Those require a pulse/block generator
+    and a compatible security analysis."
+
+    ``sample_index`` indexes a pass/profile epoch, not an optical pulse --
+    this is block/epoch-common calibration fluctuation by declaration.
+
+    ::
+
+        sigma_log_sq = ln(1 + relative_sigma^2)   [relative_sigma = RMS relative fluctuation, std/mean]
+        sigma_log    = sqrt(sigma_log_sq)          [standard deviation of log-factor]
+        mu_log       = -sigma_log_sq / 2           [unit-mean normalization]
+        X ~ N(mu_log, sigma_log)  from context.rng_for("mu")   [scale = std dev]
+        intensity_factor = exp(X)
+
+    **Numerical contract (LINK-5 plan §2.1, R4 -- overflow-safe disposition):**
+    construction computes and validates that the derived ``sigma_log_sq``,
+    ``sigma_log``, and ``mu_log`` are all finite -- a huge-but-finite
+    ``relative_sigma`` whose square overflows fails loudly at
+    **construction**, not silently at first draw. Evaluation validates the
+    sampled factor is finite before emitting it (never leaks
+    ``inf``/``NaN``/``OverflowError`` as an accepted observable);
+    ``qkd.link.ChannelStack``'s composed-source validation (plan §1.4) is
+    the backstop layer beyond this effect's own.
+
+    **Zero-variance case (pinned):** the class is stochastic *by contract*
+    -- ``relative_sigma=0`` still draws (a scale-0 normal), still requires a
+    resolved seed and an explicit ``sample_index``, and yields
+    ``intensity_factor`` exactly ``1.0``; consistent with LINK-4's
+    zero-jitter behaviour (:class:`PointingJitterEffect`).
+
+    Declares ``unit_mean_fading_fields = {"intensity_factor"}`` (LINK-5
+    plan §1.4): at :class:`~qkd.link.ChannelStack` construction this relaxes
+    that field's validation, for this effect only, from ``[0, 1]`` to finite
+    and ``>= 0`` (the factor is > 1 for roughly half of all draws).
+
+    Domain: ``relative_sigma`` finite ``>= 0``, validated at construction
+    via :func:`_require`. Typical magnitudes are percent-level (calibration
+    drift, not pulse-resolved noise). No geometry requirement.
+
+    **Indexing contract (plan §3, binding):** identical in shape to
+    :class:`ScintillationFadingEffect`/:class:`PointingJitterEffect` --
+    :meth:`evaluate` requires an explicit ``context.sample_index`` (raises,
+    naming ``sample_index``, *before* drawing) and calls
+    ``context.rng_for("mu")`` with no index argument, letting the
+    stack-owned context supply the already-validated index.
+
+    **Consumption gate:** see the module docstring's "LINK-6 source/
+    detector-consumption gate" section and ``qkd.link.SourceObservables``'s
+    epistemic contract -- ``intensity_factor`` remains bridge-rejected until
+    that gate is satisfied.
+    """
+
+    relative_sigma: float
+    effect_id: str = field(default="mu_fluctuation", init=False)
+    unit_mean_fading_fields: frozenset[str] = field(
+        default=frozenset({"intensity_factor"}), init=False
+    )
+    sigma_log_sq: float = field(init=False, repr=False, compare=False)
+    sigma_log: float = field(init=False, repr=False, compare=False)
+    mu_log: float = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        _require("relative_sigma", self.relative_sigma, lo=0.0, hi=math.inf)
+
+        # Multiplication (not ``**``), deliberately: CPython's float ``**``
+        # raises OverflowError on an overflowing result instead of returning
+        # inf, which would surface as an uncaught OverflowError rather than
+        # the controlled, contract-named ValueError below (R4 numerical
+        # contract, LINK-5 plan §2.1).
+        relative_sigma_sq = self.relative_sigma * self.relative_sigma
+        sigma_log_sq = math.log1p(relative_sigma_sq)
+        if not math.isfinite(sigma_log_sq):
+            raise ValueError(
+                "MuFluctuationEffect: derived sigma_log_sq="
+                f"{sigma_log_sq!r} is not finite for relative_sigma="
+                f"{self.relative_sigma!r} (construction-time R4 numerical "
+                "contract, LINK-5 plan §2.1)."
+            )
+        sigma_log = math.sqrt(sigma_log_sq)
+        mu_log = -sigma_log_sq / 2.0
+        if not math.isfinite(sigma_log) or not math.isfinite(mu_log):
+            raise ValueError(
+                "MuFluctuationEffect: derived sigma_log/mu_log are not both "
+                f"finite (sigma_log={sigma_log!r}, mu_log={mu_log!r}) for "
+                f"relative_sigma={self.relative_sigma!r} (construction-time "
+                "R4 numerical contract, LINK-5 plan §2.1)."
+            )
+
+        object.__setattr__(self, "sigma_log_sq", sigma_log_sq)
+        object.__setattr__(self, "sigma_log", sigma_log)
+        object.__setattr__(self, "mu_log", mu_log)
+
+    def evaluate(
+        self, t: float, geom: PassGeometry, *, context: EffectEvaluationContext
+    ) -> LinkObservables:
+        if context.sample_index is None:
+            raise ValueError(
+                "MuFluctuationEffect.evaluate: context.sample_index is "
+                "None; this effect requires an explicit sample_index (LINK-5 "
+                "indexing contract, plan §3) -- without it, the runtime "
+                "would resolve the same RNG stream every call and silently "
+                "repeat one draw across all geometries."
+            )
+        rng = context.rng_for("mu")
+        x = rng.normal(loc=self.mu_log, scale=self.sigma_log)
+        try:
+            # CPython's math.exp raises OverflowError on an overflowing
+            # result instead of returning inf; caught and normalized to inf
+            # so the finiteness check below is the one controlled,
+            # contract-named raise (R4 numerical contract, LINK-5 plan §2.1)
+            # -- never an uncaught OverflowError escaping evaluate().
+            intensity_factor = math.exp(x)
+        except OverflowError:
+            intensity_factor = math.inf
+        if not math.isfinite(intensity_factor):
+            raise ValueError(
+                "MuFluctuationEffect.evaluate: sampled intensity_factor="
+                f"{intensity_factor!r} is not finite; refusing to emit a "
+                "non-finite observable (R4 numerical contract, LINK-5 plan "
+                "§2.1) -- qkd.link.ChannelStack's composed-source validation "
+                "is a further backstop, not a substitute for this check."
+            )
+        return LinkObservables(source=SourceObservables(intensity_factor=intensity_factor))
+
+
+@dataclass(frozen=True)
+class DetectorAfterpulsingEffect:
+    """Nominal/calibrated conditional afterpulse-probability parameter owner (LINK-5, plan §2.2).
+
+    **Binding contract (LINK-5 plan §2.2, R3.1 -- verbatim):** "``afterpulse_prob``
+    is a nominal/calibrated *conditional* afterpulse-probability parameter
+    under a declared detector operating convention. It is not an
+    independent additive count probability or a context-free material
+    constant. LINK-6 must define its conditioning event, counting
+    window/gate model, and interaction with dead time before use." (Afterpulse
+    estimation is calibration- and rate-dependent; cf. Wiechers et al.,
+    gated-APD afterpulsing.)
+
+    Domain: finite, in ``[0, 1]``, validated at construction via
+    :func:`_require`. Ignores ``context`` -- no controls, no RNG ("a
+    constant is a function that ignores t", plan §4).
+
+    This is a **single-contributor field owner**
+    (``qkd.link.ChannelStack``, LINK-1): a second nonzero
+    ``afterpulse_prob`` contributor anywhere in the same stack raises
+    :class:`~qkd.link.SingleContributorConflictError`; a distinct nonzero
+    :class:`DetectorDeadTimeEffect` contributor coexists in the same stack
+    without conflict (different field; LINK-5 plan §2.3).
+
+    Not in the production stack; bridge-rejected by
+    ``qkd.link.apply_link_state`` until LINK-6 -- see the module
+    docstring's "LINK-6 source/detector-consumption gate".
+    """
+
+    afterpulse_prob: float
+    effect_id: str = field(default="detector_afterpulsing", init=False)
+
+    def __post_init__(self) -> None:
+        _require("afterpulse_prob", self.afterpulse_prob, lo=0.0, hi=1.0)
+
+    def evaluate(
+        self, t: float, geom: PassGeometry, *, context: EffectEvaluationContext
+    ) -> LinkObservables:
+        return LinkObservables(
+            detector=DetectorObservables(afterpulse_prob=self.afterpulse_prob)
+        )
+
+
+@dataclass(frozen=True)
+class DetectorDeadTimeEffect:
+    """Detector recovery/hold-off duration parameter owner (LINK-5, plan §2.3).
+
+    **Binding contract (LINK-5 plan §2.3, R3.2 -- verbatim):** "``dead_time_s``
+    is the detector recovery/hold-off duration parameter. LINK-5 assigns no
+    throughput law. LINK-6 must declare the detector timing model
+    (non-paralyzable, paralyzable, or gated/hold-off) and the rate variable
+    to which the parameter applies."
+
+    Domain: finite, ``>= 0``, validated at construction via :func:`_require`.
+    Ignores ``context`` -- no controls, no RNG ("a constant is a function
+    that ignores t", plan §4).
+
+    This is a **single-contributor field owner**
+    (``qkd.link.ChannelStack``, LINK-1): a second nonzero ``dead_time_s``
+    contributor anywhere in the same stack raises
+    :class:`~qkd.link.SingleContributorConflictError`; a distinct nonzero
+    :class:`DetectorAfterpulsingEffect` contributor coexists in the same
+    stack without conflict (different field; LINK-5 plan §2.2).
+
+    Not in the production stack; bridge-rejected by
+    ``qkd.link.apply_link_state`` until LINK-6 -- see the module
+    docstring's "LINK-6 source/detector-consumption gate".
+    """
+
+    dead_time_s: float
+    effect_id: str = field(default="detector_dead_time", init=False)
+
+    def __post_init__(self) -> None:
+        _require("dead_time_s", self.dead_time_s, lo=0.0, hi=math.inf)
+
+    def evaluate(
+        self, t: float, geom: PassGeometry, *, context: EffectEvaluationContext
+    ) -> LinkObservables:
+        return LinkObservables(detector=DetectorObservables(dead_time_s=self.dead_time_s))
