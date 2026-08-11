@@ -6,3 +6,6 @@ outputs/
 node_modules/
 .DS_Store*.egg-info/
 .DS_Store
+
+# Private strategy/positioning notes — never publish (competitive + defence-adjacent framing)
+docs/private/
