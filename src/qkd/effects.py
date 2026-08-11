@@ -57,6 +57,10 @@ from qkd.link import (
 )
 
 
+C_M_S = 299_792_458.0
+"""Speed of light in vacuum, m/s (LINK-3, plan §2.2) -- the single named constant."""
+
+
 def _require(name: str, value: float, *, lo: float, hi: float) -> None:
     """Shared construction-time domain check (plan §4 -- "not four ad-hoc rule sets").
 
@@ -68,6 +72,19 @@ def _require(name: str, value: float, *, lo: float, hi: float) -> None:
         raise ValueError(
             f"{name} must be finite and in [{lo}, {hi}]; got {value!r}."
         )
+
+
+def _require_positive(name: str, value: float) -> None:
+    """Construction-time strict-positivity check (LINK-3, plan §4).
+
+    ``_require`` above is a closed-interval ``[lo, hi]`` check and so cannot
+    express ``> 0``; this sibling helper covers the strict-positivity
+    parameters LINK-3 introduces (``carrier_frequency_hz``,
+    ``beam_divergence_urad``) with the same finite-and-named-failure shape.
+    """
+
+    if not math.isfinite(value) or not value > 0.0:
+        raise ValueError(f"{name} must be finite and > 0; got {value!r}.")
 
 
 @dataclass(frozen=True)
@@ -179,4 +196,110 @@ class DetectorQuantumEfficiencyEffect:
     ) -> LinkObservables:
         return LinkObservables(
             detector=DetectorObservables(efficiency_factor=self.detection_efficiency)
+        )
+
+
+# ---------------------------------------------------------------------------
+# LINK-3 -- opt-in geometry-coupled deterministic effects (docs/LINK_3_PLAN.md
+# §4). Neither effect is added to _production_link_effects (mission.py):
+# Doppler remains bridge-rejected until LINK-6, and pointing bias remains an
+# opt-in appended user effect until a production-stack membership PR argues
+# its own parity case.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DopplerShiftEffect:
+    """First-order line-of-sight kinematic Doppler shift (LINK-3, plan §2.2, §4).
+
+    This effect computes the first-order line-of-sight kinematic Doppler
+    shift produced by the circular-orbit, stationary-Earth geometry used by
+    ``qkd.orbit``. It is not a complete frequency-transfer model. Excluded:
+    Earth rotation/station motion, eccentric-orbit ephemerides, gravitational
+    shift, hardware oscillator offsets, atmospheric propagation effects. The
+    omitted longitudinal second-order relativistic term is ~100 kHz at
+    optical carriers -- approximately five orders below the first-order
+    shift and below the GHz-scale filter widths contemplated for the initial
+    LINK-6 consumer. Scale anchor: 785 nm (f0 ~= 3.819e14 Hz), 6 km/s => ~=
+    7.64 GHz.
+
+    ``frequency_offset_hz = -(v_r / C_M_S) * carrier_frequency_hz``, where
+    ``v_r`` is ``geom.radial_velocity_mps`` (positive = receding, negative =
+    approaching -- ``qkd.orbit``'s sign convention). ``carrier_frequency_hz``
+    is an explicit required parameter (finite, > 0); no hidden wavelength
+    default.
+
+    Not in the production stack (plan §1, §8): Doppler stays bridge-rejected
+    by ``qkd.link.apply_link_state`` until LINK-6 wires
+    ``frequency_offset_hz`` into an estimator-owned consumer. Usable today
+    directly at the ``qkd.link.ChannelStack`` level for research use.
+    """
+
+    carrier_frequency_hz: float
+    effect_id: str = field(default="doppler_shift", init=False)
+
+    def __post_init__(self) -> None:
+        _require_positive("carrier_frequency_hz", self.carrier_frequency_hz)
+
+    def evaluate(
+        self, t: float, geom: PassGeometry, *, context: EffectEvaluationContext
+    ) -> LinkObservables:
+        if geom.radial_velocity_mps is None:
+            raise ValueError(
+                "DopplerShiftEffect.evaluate: geom.radial_velocity_mps is "
+                "None (geometry provider does not populate radial velocity); "
+                "this effect requires a radial-velocity-populated geometry "
+                "provider (LINK-3 SatellitePass.radial_velocity_km_s)."
+            )
+        frequency_offset_hz = -(geom.radial_velocity_mps / C_M_S) * self.carrier_frequency_hz
+        return LinkObservables(
+            channel=ChannelObservables(frequency_offset_hz=frequency_offset_hz)
+        )
+
+
+@dataclass(frozen=True)
+class PointingLossEffect:
+    """Receiver-centre / small-aperture pointing-bias attenuation (LINK-3, plan §2.3, §4).
+
+    ``PointingLossEffect`` models the attenuation of Gaussian irradiance at
+    the receiver centre under a fixed angular boresight offset. Used
+    multiplicatively with the centred finite-aperture ``GeometricLossEffect``,
+    it is a small-aperture approximation, valid when the receiver aperture is
+    small relative to the beam spot. Exact displaced-beam aperture
+    integration and stochastic beam wander are deferred.
+
+    The centre-irradiance ratio computed here is range-independent under the
+    constant-angle far-field approximation -- it is *not* an exact
+    factorization of the displaced-Gaussian finite-aperture capture, which
+    depends jointly on aperture, beam radius, and displacement and retains
+    range dependence through a/w (cf. Safi et al., arXiv:2005.11786).
+
+    ``transmittance_factor = exp(-2 * (boresight_offset_urad /
+    beam_divergence_urad) ** 2)``. Output domain is ``[0, 1]``, not
+    ``(0, 1]``: large finite offset/divergence ratios may underflow to
+    exactly ``0.0``.
+
+    ``beam_divergence_urad`` is independent of ``GeometricLossEffect``'s
+    divergence parameter (caller keeps them physically consistent; no hidden
+    coupling -- LINK-2 explicit-construction pattern).
+
+    Not in the production stack (plan §1, §8); usable today as an appended
+    user effect via ``simulate_pass(link_effects=...)``.
+    """
+
+    boresight_offset_urad: float
+    beam_divergence_urad: float
+    effect_id: str = field(default="pointing_loss", init=False)
+
+    def __post_init__(self) -> None:
+        _require("boresight_offset_urad", self.boresight_offset_urad, lo=0.0, hi=math.inf)
+        _require_positive("beam_divergence_urad", self.beam_divergence_urad)
+
+    def evaluate(
+        self, t: float, geom: PassGeometry, *, context: EffectEvaluationContext
+    ) -> LinkObservables:
+        ratio = self.boresight_offset_urad / self.beam_divergence_urad
+        transmittance_factor = math.exp(-2.0 * ratio**2)
+        return LinkObservables(
+            channel=ChannelObservables(transmittance_factor=transmittance_factor)
         )

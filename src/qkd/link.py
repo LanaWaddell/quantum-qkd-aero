@@ -128,10 +128,11 @@ class PassGeometry:
 
     ``elevation_deg``/``slant_range_km``/``radial_velocity_mps`` are optional
     so non-satellite media (fibre, decision 4) can conform without inventing
-    satellite-specific values. :class:`TableGeometryProvider` (the LINK-1
-    satellite provider) never populates ``radial_velocity_mps``: the wrapped
-    ``orbit.SatellitePass`` carries no velocity column -- Doppler derivation
-    is LINK-3 scope.
+    satellite-specific values. :class:`TableGeometryProvider` (the LINK-1/
+    LINK-3 satellite provider) populates ``radial_velocity_mps`` when the
+    wrapped ``orbit.SatellitePass`` carries a ``radial_velocity_km_s``
+    column (LINK-3, ``docs/LINK_3_PLAN.md`` §3); it is ``None`` when that
+    column is absent, exactly as before LINK-3.
     """
 
     t_s: float
@@ -254,6 +255,17 @@ class TableGeometryProvider:
     on this); an out-of-domain query raises, never silently extrapolates;
     interpolated (and exact) results carry ``PassGeometry.t_s ==
     requested_t``.
+
+    Optional fourth column (LINK-3, plan §3): when
+    ``satellite_pass.radial_velocity_km_s`` is not ``None``, it must have
+    the same (nonzero) length as the other columns and every value must be
+    finite; it is snapshotted to a tuple, converted to m/s (``* 1000.0``,
+    applied exactly once, at construction) alongside the other columns, and
+    exposed as ``PassGeometry.radial_velocity_mps`` using the same
+    exact-at-sample-time / linear-interpolation-between-samples rule as
+    ``elevation_deg``/``slant_range_km``. When the column is absent (or the
+    wrapped ``SatellitePass`` predates LINK-3), ``radial_velocity_mps`` is
+    ``None`` for every query -- the LINK-1 behaviour, unchanged.
     """
 
     def __init__(self, satellite_pass: SatellitePass) -> None:
@@ -282,9 +294,29 @@ class TableGeometryProvider:
             if not math.isfinite(value):
                 raise GeometryTableError("SatellitePass.slant_range_km must be finite.")
 
+        radial_velocity_km_s = satellite_pass.radial_velocity_km_s
+        radial_velocity_mps: tuple[float, ...] | None
+        if radial_velocity_km_s is None:
+            radial_velocity_mps = None
+        else:
+            radial_velocity_km_s = tuple(float(v) for v in radial_velocity_km_s)
+            if len(radial_velocity_km_s) != n:
+                raise GeometryTableError(
+                    "SatellitePass.radial_velocity_km_s must have the same "
+                    "length as time_s/elevation_deg/slant_range_km."
+                )
+            for value in radial_velocity_km_s:
+                if not math.isfinite(value):
+                    raise GeometryTableError(
+                        "SatellitePass.radial_velocity_km_s must be finite."
+                    )
+            # km/s -> m/s, applied exactly once, at construction (plan §3).
+            radial_velocity_mps = tuple(v * 1000.0 for v in radial_velocity_km_s)
+
         self._time_s = time_s
         self._elevation_deg = elevation_deg
         self._slant_range_km = slant_range_km
+        self._radial_velocity_mps = radial_velocity_mps
 
     def at(self, t: float) -> PassGeometry:
         time_s = self._time_s
@@ -296,10 +328,16 @@ class TableGeometryProvider:
 
         idx = bisect.bisect_left(time_s, t)
         if idx < n and time_s[idx] == t:
+            radial_velocity_mps = (
+                self._radial_velocity_mps[idx]
+                if self._radial_velocity_mps is not None
+                else None
+            )
             return PassGeometry(
                 t_s=t,
                 elevation_deg=self._elevation_deg[idx],
                 slant_range_km=self._slant_range_km[idx],
+                radial_velocity_mps=radial_velocity_mps,
             )
 
         lo, hi = idx - 1, idx
@@ -311,7 +349,17 @@ class TableGeometryProvider:
         slant_range_km = self._slant_range_km[lo] + frac * (
             self._slant_range_km[hi] - self._slant_range_km[lo]
         )
-        return PassGeometry(t_s=t, elevation_deg=elevation_deg, slant_range_km=slant_range_km)
+        radial_velocity_mps = None
+        if self._radial_velocity_mps is not None:
+            radial_velocity_mps = self._radial_velocity_mps[lo] + frac * (
+                self._radial_velocity_mps[hi] - self._radial_velocity_mps[lo]
+            )
+        return PassGeometry(
+            t_s=t,
+            elevation_deg=elevation_deg,
+            slant_range_km=slant_range_km,
+            radial_velocity_mps=radial_velocity_mps,
+        )
 
 
 # ---------------------------------------------------------------------------

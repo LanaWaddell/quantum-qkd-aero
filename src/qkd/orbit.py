@@ -31,8 +31,21 @@ and genuinely coupled, unlike the previous interpolated profile. Slant range at 
 zenith pass equals the orbit altitude because the geometry demands it (a check the
 tests assert).
 
-API: returns a columnar SatellitePass (time_s / elevation_deg / slant_range_km
-parallel lists) for compatibility with run.py and the coherence pass loop.
+API: returns a columnar SatellitePass (time_s / elevation_deg / slant_range_km /
+radial_velocity_km_s) for compatibility with run.py and the coherence pass loop.
+
+Radial velocity (LINK-3, ``docs/LINK_3_PLAN.md`` §2.1)
+--------------------------------------------------------
+With cos(gamma) = cos(gamma_min) cos(psi), psi = omega*t, the range-rate is the
+exact derivative of the declared model above:
+
+    d(gamma(psi))/dt = R_E * r * omega * cos(gamma_min) * sin(psi) / d(gamma(psi))
+
+This is the exact derivative of the declared circular-orbit, stationary-Earth
+model -- not an exact real-orbit radial velocity. Earth rotation, station
+motion, non-circular ephemerides, and relativistic frequency contributions are
+excluded, consistent with the geometry model above. Sign convention: positive
+is receding, negative is approaching.
 """
 from __future__ import annotations
 
@@ -50,6 +63,7 @@ class SatellitePass:
     time_s: list[float]
     elevation_deg: list[float]
     slant_range_km: list[float]
+    radial_velocity_km_s: list[float] | None = None
 
 
 def _elevation_from_gamma(gamma_rad: float, r_km: float) -> float:
@@ -68,6 +82,31 @@ def _gamma_for_elevation(elevation_deg: float, r_km: float) -> float:
     k = EARTH_RADIUS_KM / r_km
     e = math.radians(elevation_deg)
     return math.acos(k * math.cos(e)) - e
+
+
+def _radial_velocity_km_s(psi: float, d_km: float, r_km: float, gamma_min: float) -> float:
+    """Exact derivative of the declared slant-range model (LINK-3, plan §2.1).
+
+    ``d(d)/dt = R_E * r_km * omega * cos(gamma_min) * sin(psi) / d_km``, where
+    ``omega = sqrt(EARTH_MU_KM3_S2 / r_km**3)`` is the orbital angular rate for
+    the circular orbit of radius ``r_km``. The ``sin(gamma)`` factor common to
+    both ``d(gamma)`` and ``gamma_dot`` cancels analytically, which is what
+    avoids the removable singularity a separate ``gamma_dot`` computation
+    would hit at zenith closest approach (``sin(gamma) == 0``).
+
+    Private, internal helper: ``psi``/``d_km``/``r_km``/``gamma_min`` are
+    always supplied by :func:`satellite_pass` from its own already-validated
+    geometry (``d_km`` is the positive slant range implied by ``psi`` and
+    ``gamma_min`` via :func:`_slant_range_from_gamma`, which is strictly
+    positive because ``r_km != EARTH_RADIUS_KM`` for any physical altitude).
+    No redundant validation is performed here for that reason; this function
+    documents its valid-domain assumptions rather than re-checking inputs
+    ``satellite_pass`` already guarantees.
+
+    Sign convention (binding): positive = receding, negative = approaching.
+    """
+    omega = math.sqrt(EARTH_MU_KM3_S2 / r_km**3)  # rad/s
+    return EARTH_RADIUS_KM * r_km * omega * math.cos(gamma_min) * math.sin(psi) / d_km
 
 
 def satellite_pass(
@@ -110,6 +149,7 @@ def satellite_pass(
     time_s: list[float] = []
     elevation_deg: list[float] = []
     slant_range_km: list[float] = []
+    radial_velocity_km_s: list[float] = []
 
     for index in range(samples):
         frac = index / (samples - 1)             # 0..1
@@ -121,9 +161,13 @@ def satellite_pass(
         time_s.append(psi / omega)               # 0 at peak; symmetric +/-
         elevation_deg.append(_elevation_from_gamma(gamma, r))
         slant_range_km.append(_slant_range_from_gamma(gamma, r))
+        radial_velocity_km_s.append(
+            _radial_velocity_km_s(psi, slant_range_km[-1], r, gamma_min)
+        )
 
     return SatellitePass(
         time_s=time_s,
         elevation_deg=elevation_deg,
         slant_range_km=slant_range_km,
+        radial_velocity_km_s=radial_velocity_km_s,
     )
