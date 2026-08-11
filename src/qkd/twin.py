@@ -196,7 +196,15 @@ class LinearGaussianTwin:
     def measurement_dim(self) -> int:
         return self.H.shape[0]
 
-    def run(self, observations, x0, P0) -> TwinTrace:
+    def run(
+        self,
+        observations,
+        x0,
+        P0,
+        *,
+        control_matrix=None,
+        control_inputs=None,
+    ) -> TwinTrace:
         """Run the filter once over ``observations``, returning a fresh ``TwinTrace``.
 
         Joseph form exactly: ``P+ = (I-KH) P- (I-KH)^T + K R K^T``, followed
@@ -204,6 +212,23 @@ class LinearGaussianTwin:
         symmetric-system solve below, use ``numpy.linalg.solve``/Cholesky --
         never an explicit matrix inverse. A PSD failure on ``P+`` raises
         (plan Sec2.1); it is never hidden by eigenvalue clipping.
+
+        Known-input extension (TWIN-2 plan Sec3, R9): ``control_matrix``
+        (``B``, shape ``(state_dim, control_dim)``) and ``control_inputs``
+        (``U``, shape ``(n_steps, control_dim)``) are optional and must be
+        supplied together or both omitted. When both are ``None`` (the
+        default) this method takes the **exact** pre-TWIN-2 arithmetic
+        branch -- not that branch plus a numerically-zero control term --
+        so every ``TwinTrace`` array is bit-identical to the TWIN-1
+        behaviour for identical ``(observations, x0, P0)`` (plan Sec3,
+        obligation 1). When supplied, the known-input timing convention
+        (plan Sec2) is ``x_hat^-_k = F @ x_hat_{k-1} + B @ u_{k-1}`` -- the
+        control at index ``k-1`` predicts observation ``k``, so the first
+        prediction (``k=0``) uses ``x0`` with **no** control term at all
+        (there is no ``u_{-1}``). ``Q`` (process noise) is unaffected by
+        the control term: only the predicted mean shifts by the known
+        ``B @ u_{k-1}``, exactly the standard known-input Kalman
+        prediction step.
         """
         n = self.state_dim
         m = self.measurement_dim
@@ -229,6 +254,8 @@ class LinearGaussianTwin:
         _check_symmetric(P0, "P0")
         _check_psd(P0, "P0")
 
+        B, U = self._validate_control(control_matrix, control_inputs, n=n, n_steps=n_steps)
+
         if n == 1 and m == 1:
             # Scalar fast path (performance note, plan Sec6): mathematically
             # identical to the general branch below, specialized so ensemble
@@ -240,12 +267,73 @@ class LinearGaussianTwin:
             # the general numpy linear-algebra entry points to avoid their
             # per-call dispatch overhead at this scale. The Joseph-form
             # arithmetic, PSD gate, and re-symmetrization (a no-op for a
-            # 1x1 matrix) are otherwise untouched.
-            return self._run_scalar(observations, float(x0[0]), float(P0[0, 0]))
+            # 1x1 matrix) are otherwise untouched. The known-input control
+            # term (TWIN-2) is implemented identically to the general path
+            # below, evaluated in scalar closed form.
+            b_scalar = None if B is None else float(B[0, 0])
+            return self._run_scalar(observations, float(x0[0]), float(P0[0, 0]), b_scalar, U)
 
-        return self._run_general(observations, x0, P0)
+        return self._run_general(observations, x0, P0, B, U)
 
-    def _run_general(self, observations: np.ndarray, x0: np.ndarray, P0: np.ndarray) -> TwinTrace:
+    @staticmethod
+    def _validate_control(control_matrix, control_inputs, *, n: int, n_steps: int):
+        """Validate the optional known-input pair (TWIN-2 plan Sec3, R9).
+
+        Returns ``(None, None)`` when both arguments are omitted (the
+        TWIN-1 branch), or ``(B, U)`` as finite ``float`` arrays with
+        ``B.shape == (n, control_dim)`` and ``U.shape == (n_steps,
+        control_dim)``, ``control_dim >= 1``, after raising clearly on any
+        supplied-alone, empty-control-dim, shape-mismatch, length-mismatch,
+        or non-finite input.
+        """
+        if control_matrix is None and control_inputs is None:
+            return None, None
+        if control_matrix is None or control_inputs is None:
+            raise ValueError(
+                "control_matrix and control_inputs must be supplied together "
+                "or both omitted."
+            )
+
+        B = np.asarray(control_matrix, dtype=float)
+        if B.ndim != 2 or B.shape[0] != n:
+            raise ValueError(
+                f"control_matrix must have shape ({n}, control_dim); got {B.shape}."
+            )
+        control_dim = B.shape[1]
+        if control_dim < 1:
+            raise ValueError(
+                "control_matrix must declare at least one control column "
+                f"(control_dim >= 1); got control_dim={control_dim}."
+            )
+        _check_finite(B, "control_matrix")
+
+        U = np.asarray(control_inputs, dtype=float)
+        if U.ndim != 2 or U.shape[1] != control_dim:
+            raise ValueError(
+                f"control_inputs must have shape ({n_steps}, {control_dim}); "
+                f"got {U.shape}."
+            )
+        if U.shape[0] != n_steps:
+            raise ValueError(
+                f"control_inputs has {U.shape[0]} rows but observations "
+                f"declares {n_steps} steps; control_inputs must have exactly "
+                "one row per step under the Sec2 timing convention (the last "
+                "row is unused by the prediction recursion -- there is no "
+                "observation it predicts -- but is still required for shape "
+                "consistency with the probe/observation arrays it is drawn "
+                "alongside)."
+            )
+        _check_finite(U, "control_inputs")
+        return B, U
+
+    def _run_general(
+        self,
+        observations: np.ndarray,
+        x0: np.ndarray,
+        P0: np.ndarray,
+        B: np.ndarray | None = None,
+        U: np.ndarray | None = None,
+    ) -> TwinTrace:
         n = self.state_dim
         m = self.measurement_dim
         n_steps = observations.shape[0]
@@ -260,8 +348,18 @@ class LinearGaussianTwin:
         filtered_covariance = np.empty((n_steps, n, n))
 
         for k in range(n_steps):
-            # Predict.
-            x_pred = self.F @ x
+            # Predict. Known-input extension (TWIN-2 plan Sec2/Sec3): when B
+            # is None this is the exact TWIN-1 expression, unchanged --
+            # never "plus a zero control term". When B is given, the
+            # control at index k-1 predicts observation k (x_hat^-_k =
+            # F@x_hat_{k-1} + B@u_{k-1}); the first prediction (k=0) uses
+            # x0 with no control term at all.
+            if B is None:
+                x_pred = self.F @ x
+            elif k > 0:
+                x_pred = self.F @ x + B @ U[k - 1]
+            else:
+                x_pred = self.F @ x
             P_pred = self.F @ P @ self.F.T + self.Q
 
             # Innovation.
@@ -296,7 +394,14 @@ class LinearGaussianTwin:
             filtered_covariance=filtered_covariance,
         )
 
-    def _run_scalar(self, observations: np.ndarray, x0: float, p0: float) -> TwinTrace:
+    def _run_scalar(
+        self,
+        observations: np.ndarray,
+        x0: float,
+        p0: float,
+        b: float | None = None,
+        U: np.ndarray | None = None,
+    ) -> TwinTrace:
         f = float(self.F[0, 0])
         h = float(self.H[0, 0])
         q = float(self.Q[0, 0])
@@ -310,8 +415,16 @@ class LinearGaussianTwin:
         filtered_covariance = np.empty((n_steps, 1, 1))
 
         for k in range(n_steps):
-            # Predict.
-            x_pred = f * x
+            # Predict. Known-input extension (TWIN-2): identical semantics
+            # to the general path's control term, evaluated in scalar
+            # closed form -- b is None reproduces the exact TWIN-1
+            # expression below, unchanged.
+            if b is None:
+                x_pred = f * x
+            elif k > 0:
+                x_pred = f * x + b * float(U[k - 1, 0])
+            else:
+                x_pred = f * x
             p_pred = f * f * p + q
 
             # Innovation. s == (Cholesky factor)**2 of the 1x1 S; the PD

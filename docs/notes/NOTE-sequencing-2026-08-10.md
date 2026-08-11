@@ -72,7 +72,11 @@ The research specs are roadmap-grade, not implementation-ready. Each item below 
 - Deep-space delay needs an event timeline (one-way L vs. round-trip 2L vs. asynchronous); "pre-commit the whole window" follows only when the relevant feedback delay is large relative to both the control interval and remaining contact time.
 - Distinguish a classical *key store* from a generic DTN bundle — forwarding key material through intermediate nodes changes the trust/composability model.
 
-## 5. Order summary
+## 5. Amendment (2026-08-12, PI-approved — Echo TWIN-2 review R1, Option B)
+
+The §3 gate ("do not run [watermark/privileged perturbation] standalone now … run as Exp 3B after Exp 1's generators exist") is **amended, not removed**:
+
+- **Permitted now:** the model-generic **synthetic** Route-2 primitive (TWIN-2: private-probe watermarking and the probe/innovation cross-correlation detector on the TWIN-1 scalar LGSS substrate). Rationale: the TWIN-1 precedent (methodological evidence on the synthetic substrate first) applies to the cross-correlation statistic; the primitive consumes no channel dynamics and mak
 
 ```
 now:        ADR-0003 sign-off → LINK-1 (baseline frozen ✅; LINK-1 stays clean and bounded)
