@@ -404,10 +404,40 @@ _DETECTOR_NONNEGATIVE_FIELDS = ("dark_count_rate_hz", "dead_time_s")
 
 _CORRELATION_AWARE_CHANNEL_FIELDS = frozenset({"background_rate_hz", "timing_jitter_s"})
 
+_UNIT_MEAN_FADING_RECOGNIZED_FIELDS = frozenset({"transmittance_factor"})
+"""Fields a LINK-4 ``unit_mean_fading_fields`` declaration may name (plan §4, R5).
 
-def _validate_channel_observables(obs: ChannelObservables, effect_id: str) -> None:
+Only ``"transmittance_factor"`` is recognized in LINK-4; an unrecognized
+name raises at :class:`ChannelStack` construction (never silently ignored).
+"""
+
+
+def _validate_channel_observables(
+    obs: ChannelObservables,
+    effect_id: str,
+    *,
+    relaxed_fields: frozenset[str] = frozenset(),
+) -> None:
+    """Validate one effect's raw channel observables (plan §4, R5 extension).
+
+    ``relaxed_fields`` is the effect's own cached, construction-validated
+    ``unit_mean_fading_fields`` declaration (empty for effects that never
+    declare it -- unchanged LINK-1/2/3 behaviour). For a field named there,
+    the unit-interval check below is replaced with finite-and->=0 (a
+    unit-mean fading factor is legitimately > 1); every other field, and
+    every other effect, keeps the strict ``[0, 1]`` bound.
+    """
+
     for field_name in _CHANNEL_UNIT_INTERVAL_FIELDS:
         value = getattr(obs, field_name)
+        if field_name in relaxed_fields:
+            if not math.isfinite(value) or value < 0.0:
+                raise InvalidObservableError(
+                    f"Effect {effect_id!r} produced channel.{field_name}={value!r}, "
+                    "which must be finite and >= 0 (relaxed via a declared "
+                    "unit_mean_fading_fields entry, LINK-4 plan §4)."
+                )
+            continue
         if not math.isfinite(value) or not (0.0 <= value <= 1.0):
             raise InvalidObservableError(
                 f"Effect {effect_id!r} produced channel.{field_name}={value!r}, "
@@ -453,10 +483,21 @@ class ChannelStack:
     declaration mirrored into a central, live runtime registry -- correspondence
     with ``schema.DECLARED_SCHEMA_EXTENSIONS``: same declared-or-fail
     discipline, deliberately not the same object) and rejects duplicate
-    ``effect_id``/control names (R5). Evaluation composes per the §3.3.1/§4
-    table, validates every effect's raw observables before composing, and
-    derives each effect's RNG stream via :func:`_child_rng` -- order-
-    independent by construction, never referencing registration order.
+    ``effect_id``/control names (R5). Construction also validates and caches
+    each effect's optional ``unit_mean_fading_fields`` declaration
+    (``docs/LINK_4_PLAN.md`` §4, R5) -- see
+    :meth:`_resolve_unit_mean_fading_declarations`. Evaluation composes per
+    the §3.3.1/§4 table, validates every effect's raw observables before
+    composing (relaxing the declaring effect's declared field(s) from
+    ``[0, 1]`` to finite-and->=0), and derives each effect's RNG stream via
+    :func:`_child_rng` -- order-independent by construction, never
+    referencing registration order.
+
+    **Timing note (binding honesty, LINK-4 plan §4.4):** the existing
+    ``correlated_fields`` guard (below) validates at evaluation time; the
+    ``unit_mean_fading_fields`` declaration above validates only at
+    construction. This is not a claim that the two guards share failure
+    timing, nor a change to the older guard.
     """
 
     def __init__(
@@ -496,6 +537,60 @@ class ChannelStack:
                     )
                 registry[spec.name] = spec
         self._controls: dict[str, ControlSpec] = registry
+
+        self._unit_mean_fading_declarations: dict[str, frozenset[str]] = (
+            self._resolve_unit_mean_fading_declarations()
+        )
+
+    def _resolve_unit_mean_fading_declarations(self) -> dict[str, frozenset[str]]:
+        """Validate and cache each effect's ``unit_mean_fading_fields`` (plan §4, R5).
+
+        Duck-typed and optional, like ``correlated_fields``/``controls``:
+        effects that never set it are treated as declaring nothing (empty
+        relaxation, unchanged LINK-1/2/3 validation). When set, it must be
+        an iterable of field-name strings -- a bare string is rejected
+        outright (it would otherwise iterate character-by-character) -- and
+        every name must be recognized (``_UNIT_MEAN_FADING_RECOGNIZED_FIELDS``);
+        an unrecognized name raises at construction, never silently ignored.
+        Validated once here and cached per ``effect_id`` so evaluation reads
+        a plain dict lookup.
+        """
+
+        declarations: dict[str, frozenset[str]] = {}
+        for effect in self._effects:
+            declared = getattr(effect, "unit_mean_fading_fields", None)
+            if declared is None:
+                continue
+            if isinstance(declared, str):
+                raise ValueError(
+                    f"Effect {effect.effect_id!r} declared unit_mean_fading_fields="
+                    f"{declared!r}, a bare string; it must be an iterable of "
+                    "field-name strings, not a string (which would iterate "
+                    "as individual characters)."
+                )
+            try:
+                names = frozenset(declared)
+            except TypeError:
+                raise ValueError(
+                    f"Effect {effect.effect_id!r} declared a non-iterable "
+                    f"unit_mean_fading_fields={declared!r}."
+                ) from None
+            for name in names:
+                if not isinstance(name, str):
+                    raise ValueError(
+                        f"Effect {effect.effect_id!r} declared a non-string "
+                        f"unit_mean_fading_fields entry {name!r}."
+                    )
+            unrecognized = names - _UNIT_MEAN_FADING_RECOGNIZED_FIELDS
+            if unrecognized:
+                raise ValueError(
+                    f"Effect {effect.effect_id!r} declared unrecognized "
+                    f"unit_mean_fading_fields {sorted(unrecognized)}; only "
+                    f"{sorted(_UNIT_MEAN_FADING_RECOGNIZED_FIELDS)} are "
+                    "recognized in LINK-4."
+                )
+            declarations[effect.effect_id] = names
+        return declarations
 
     @property
     def control_specs(self) -> Mapping[str, ControlSpec]:
@@ -541,7 +636,12 @@ class ChannelStack:
                 rng_for=self._rng_for_factory(effect.effect_id, sample_index),
             )
             observables = effect.evaluate(t, geom, context=context)
-            _validate_channel_observables(observables.channel, effect.effect_id)
+            relaxed_fields = self._unit_mean_fading_declarations.get(
+                effect.effect_id, frozenset()
+            )
+            _validate_channel_observables(
+                observables.channel, effect.effect_id, relaxed_fields=relaxed_fields
+            )
             _validate_detector_observables(observables.detector, effect.effect_id)
 
             correlated_fields = frozenset(getattr(effect, "correlated_fields", ()))
