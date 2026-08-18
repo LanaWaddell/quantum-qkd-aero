@@ -14,6 +14,21 @@ from dataclasses import dataclass, field, replace
 from qkd.bb84 import run_decoy_bb84
 from qkd.channel import channel_state, resolved_atmosphere_config
 from qkd.coherence import effective_werner_p_for_sky
+from qkd.detection import (
+    GateWindowRequiredError,
+    LinkModeError,
+    PdtConfig,
+    ReceiverEveNotSupportedError,
+    ReceiverInputs,
+    ReceiverModel,
+    _assert_pdt_memory_invariant,
+    classify_and_order_pdt_stack,
+    compute_receiver_block,
+    compute_receiver_block_pdt,
+    extract_receiver_inputs,
+    validate_grid_and_block_duration,
+    validate_pdt_guards,
+)
 from qkd.effects import (
     AtmosphericAbsorptionEffect,
     DetectorQuantumEfficiencyEffect,
@@ -21,9 +36,18 @@ from qkd.effects import (
     SystemEfficiencyEffect,
 )
 from qkd.fibre import DEFAULT_FIBRE, fibre_channel_state
-from qkd.link import ChannelEffect, ChannelStack, TableGeometryProvider, apply_link_state
+from qkd.link import (
+    ChannelEffect,
+    ChannelStack,
+    ControlBoundsError,
+    DuplicateControlNameError,
+    TableGeometryProvider,
+    UndeclaredControlError,
+    apply_link_state,
+)
 from qkd.orbit import satellite_pass
 from qkd.provenance import Provenance
+from qkd.replay import build_manifest
 from qkd.signals import ChannelState, DetectorParams
 from qkd.teleportation import teleportation_fidelity
 
@@ -78,6 +102,15 @@ class FibreSweepConfig:
 
 
 @dataclass(frozen=True)
+class LinkReceiverProfile:
+    """The ``profile.link_receiver`` diagnostic extension (plan Appendix A.3.2)."""
+
+    secure_key_rate_per_signal_pulse: list[float]
+    availability: list[float]
+    pi: tuple[float, float, float]
+
+
+@dataclass(frozen=True)
 class PassResult:
     time_s: list[float]
     elevation_deg: list[float]
@@ -96,6 +129,8 @@ class PassResult:
     pulse_repetition_rate_hz: float
     mission: dict[str, object]
     provenance: dict[str, str]
+    link_receiver: LinkReceiverProfile | None = None
+    link_provenance: str | None = None
 
 
 @dataclass(frozen=True)
@@ -141,6 +176,7 @@ class ProfileResult:
     classical_bound: float
     werner_p_source: float
     pulse_repetition_rate_hz: float
+    link_receiver: LinkReceiverProfile | None = None
 
 
 def simulate_pass(
@@ -150,8 +186,19 @@ def simulate_pass(
     link_effects: Sequence[ChannelEffect] | None = None,
     link_seed: int | None = None,
     link_controls: Mapping[str, float] | None = None,
+    receiver: ReceiverModel | None = None,
+    link_mode: str = "sampled",
+    pdt_config: PdtConfig | None = None,
 ) -> PassResult:
     """Compose the honest pass from already-verified module functions.
+
+    **LINK-6a activation (plan §3.1, frozen surface).** ``receiver``,
+    ``link_mode``, and ``pdt_config`` are keyword-only additions, all
+    defaulting to inactive. ``receiver=None`` (the default) is the legacy
+    path below, **byte-identical** -- no new LINK-6a code executes on it.
+    ``receiver=ReceiverModel(...)`` activates the §1 receiver chain;
+    ``link_mode="pdt"`` additionally requires ``pdt_config`` and consumes
+    the PDT chain (plan §5).
 
     **Stack-always (LINK-2, ``docs/LINK_2_PLAN.md`` §5, binding).** The
     existing satellite system/atmospheric/geometric/detector-efficiency
@@ -185,7 +232,22 @@ def simulate_pass(
     """
 
     if eve is not None:
+        if receiver is not None:
+            raise ReceiverEveNotSupportedError(
+                "receiver and eve are mutually exclusive in LINK-6a (plan §1.2); "
+                "receiver-aware Eve integration is a later PR."
+            )
         raise NotImplementedError("Eve injection is out of scope for Phase 2B-6b.")
+
+    if link_mode not in ("sampled", "pdt"):
+        raise LinkModeError(f"link_mode must be 'sampled' or 'pdt'; got {link_mode!r}.")
+    if link_mode == "pdt":
+        if receiver is None:
+            raise LinkModeError("link_mode='pdt' requires receiver to be provided (plan §3.1).")
+        if pdt_config is None:
+            raise LinkModeError("link_mode='pdt' requires pdt_config to be provided (plan §3.1).")
+    elif pdt_config is not None:
+        raise LinkModeError("pdt_config is only valid when link_mode='pdt' (plan §3.1).")
 
     cfg = config or MissionConfig()
     _validate_config(cfg)
@@ -202,41 +264,59 @@ def simulate_pass(
     effects: list[ChannelEffect] = _production_link_effects(
         resolved_atmosphere, cfg.detector
     ) + list(link_effects or [])
-    stack = ChannelStack(effects, provider, seed=link_seed)
 
-    base_channel_states = [
-        channel_state(
-            elevation_deg=elevation_deg,
-            slant_range_km=slant_range_km,
-            atmosphere=cfg.atmosphere,
-            eta_override=1.0,
-        )
-        for elevation_deg, slant_range_km in zip(
-            pass_geometry.elevation_deg,
-            pass_geometry.slant_range_km,
-        )
-    ]
-    base_detector = replace(cfg.detector, detection_efficiency=1.0)
+    if receiver is None:
+        # ---- Legacy path (byte-identical; plan §3.1 rule 1). ----
+        stack = ChannelStack(effects, provider, seed=link_seed)
 
-    channel_states, detector = _apply_link_stack(
+        base_channel_states = [
+            channel_state(
+                elevation_deg=elevation_deg,
+                slant_range_km=slant_range_km,
+                atmosphere=cfg.atmosphere,
+                eta_override=1.0,
+            )
+            for elevation_deg, slant_range_km in zip(
+                pass_geometry.elevation_deg,
+                pass_geometry.slant_range_km,
+            )
+        ]
+        base_detector = replace(cfg.detector, detection_efficiency=1.0)
+
+        channel_states, detector = _apply_link_stack(
+            pass_geometry=pass_geometry,
+            stack=stack,
+            channel_states=base_channel_states,
+            detector=base_detector,
+            link_controls=link_controls,
+        )
+
+        profile = simulate_profile(
+            pass_geometry.time_s,
+            channel_states,
+            intensities=cfg.intensities,
+            n_pulses=cfg.n_pulses,
+            detector=detector,
+            pulse_repetition_rate_hz=cfg.pulse_repetition_rate_hz,
+            sky_condition=cfg.sky_condition,
+        )
+
+        return _pass_result_from_profile(pass_geometry, profile, cfg)
+
+    # ---- Receiver-active path (LINK-6a, plan §1-§5). ----
+    return _simulate_pass_receiver_active(
+        cfg=cfg,
         pass_geometry=pass_geometry,
-        stack=stack,
-        channel_states=base_channel_states,
-        detector=base_detector,
+        resolved_atmosphere=resolved_atmosphere,
+        provider=provider,
+        effects=effects,
+        link_effects=list(link_effects or []),
+        link_seed=link_seed,
         link_controls=link_controls,
+        receiver=receiver,
+        link_mode=link_mode,
+        pdt_config=pdt_config,
     )
-
-    profile = simulate_profile(
-        pass_geometry.time_s,
-        channel_states,
-        intensities=cfg.intensities,
-        n_pulses=cfg.n_pulses,
-        detector=detector,
-        pulse_repetition_rate_hz=cfg.pulse_repetition_rate_hz,
-        sky_condition=cfg.sky_condition,
-    )
-
-    return _pass_result_from_profile(pass_geometry, profile, cfg)
 
 
 def _production_link_effects(
@@ -318,6 +398,283 @@ def _apply_link_stack(
             )
 
     return new_channel_states, resolved_detector if resolved_detector is not None else detector
+
+
+# ---------------------------------------------------------------------------
+# LINK-6a -- receiver-active pass composition (plan §1-§5). New code paths
+# only; the legacy ``receiver=None`` branch above never calls into any of
+# this (byte-identity, plan §3.1 rule 1).
+# ---------------------------------------------------------------------------
+
+
+def _validate_and_partition_controls(
+    link_controls: Mapping[str, float] | None,
+    union_registry: Mapping[str, object],
+    stack_names: set[str],
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Validate the caller's complete control mapping once against the union
+    registry (plan §2 R4), then partition it by owner."""
+
+    resolved: dict[str, float] = dict(link_controls) if link_controls else {}
+    for name, value in resolved.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"Control {name!r} value must be a finite number.")
+        numeric_value = float(value)
+        if not math.isfinite(numeric_value):
+            raise ValueError(f"Control {name!r} value must be finite.")
+        if name not in union_registry:
+            raise UndeclaredControlError(f"Undeclared control: {name!r}.")
+        spec = union_registry[name]
+        lower, upper = spec.bounds
+        if numeric_value < lower or numeric_value > upper:
+            raise ControlBoundsError(
+                f"Control {name!r} ({spec.description or spec.unit}) value "
+                f"{numeric_value} is outside static bounds [{lower}, {upper}]."
+            )
+    stack_controls = {name: value for name, value in resolved.items() if name in stack_names}
+    receiver_controls = {
+        name: value for name, value in resolved.items() if name not in stack_names
+    }
+    return stack_controls, receiver_controls
+
+
+def _simulate_pass_receiver_active(
+    *,
+    cfg: MissionConfig,
+    pass_geometry,
+    resolved_atmosphere: Mapping[str, object],
+    provider: TableGeometryProvider,
+    effects: list[ChannelEffect],
+    link_effects: list[ChannelEffect],
+    link_seed: int | None,
+    link_controls: Mapping[str, float] | None,
+    receiver: ReceiverModel,
+    link_mode: str,
+    pdt_config: PdtConfig | None,
+) -> PassResult:
+    law_effect = None
+    tau_mem_s: float | None = None
+
+    if link_mode == "pdt":
+        law_effect, prefix_effects = classify_and_order_pdt_stack(effects)
+        validate_grid_and_block_duration(pass_geometry.time_s, pdt_config.block_duration_s)
+        # Deterministic-prefix path (plan §5, C2): seed=None is deliberate --
+        # any admitted effect that nevertheless requests randomness raises
+        # SeedRequiredError (defense in depth).
+        stack = ChannelStack(prefix_effects, provider, seed=None)
+    else:
+        stack = ChannelStack(effects, provider, seed=link_seed)
+
+    union_registry: dict[str, object] = dict(stack.control_specs)
+    for spec in receiver.controls(cfg.pulse_repetition_rate_hz):
+        if spec.name in union_registry:
+            raise DuplicateControlNameError(
+                f"Duplicate control name across stack and receiver: {spec.name!r}."
+            )
+        union_registry[spec.name] = spec
+    stack_names = set(stack.control_specs)
+
+    stack_controls, receiver_controls = _validate_and_partition_controls(
+        link_controls, union_registry, stack_names
+    )
+    gate_window_s = receiver_controls.get("gate_window_s")
+
+    base_channel_states = [
+        channel_state(
+            elevation_deg=elevation_deg,
+            slant_range_km=slant_range_km,
+            atmosphere=cfg.atmosphere,
+            eta_override=1.0,
+        )
+        for elevation_deg, slant_range_km in zip(
+            pass_geometry.elevation_deg,
+            pass_geometry.slant_range_km,
+        )
+    ]
+    base_detector = replace(cfg.detector, detection_efficiency=1.0)
+
+    channel_states: list[ChannelState] = []
+    receiver_inputs_list: list[ReceiverInputs] = []
+    detector: DetectorParams | None = None
+    for sample_index, (t, base_channel) in enumerate(
+        zip(pass_geometry.time_s, base_channel_states)
+    ):
+        state = stack.evaluate(t, controls=stack_controls, sample_index=sample_index)
+        inputs, residual = extract_receiver_inputs(state)
+        new_channel, new_detector = apply_link_state(
+            residual, channel=base_channel, detector=base_detector
+        )
+        channel_states.append(new_channel)
+        receiver_inputs_list.append(inputs)
+        if detector is None:
+            detector = new_detector
+        elif new_detector.detection_efficiency != detector.detection_efficiency:
+            raise ValueError(
+                "link_effects produced a sample-varying detector efficiency; "
+                "the receiver-active path shares one detector across the whole "
+                "pass profile (same restriction as the legacy path)."
+            )
+
+    if link_mode == "pdt":
+        # The memory guard below is evaluated once, from sample 0's
+        # dead_time_s; that is only justified if every sample agrees.
+        _assert_pdt_memory_invariant(receiver_inputs_list)
+        tau_mem_s = validate_pdt_guards(
+            pdt_config,
+            dead_time_s=receiver_inputs_list[0].dead_time_s,
+            pulse_repetition_rate_hz=cfg.pulse_repetition_rate_hz,
+            n_pulses=cfg.n_pulses,
+            block_duration_s=pdt_config.block_duration_s,
+        )
+
+    profile = _simulate_profile_receiver(
+        pass_geometry.time_s,
+        channel_states,
+        detector=detector,
+        intensities=cfg.intensities,
+        n_pulses=cfg.n_pulses,
+        pi=receiver.pi,
+        pulse_repetition_rate_hz=cfg.pulse_repetition_rate_hz,
+        sky_condition=cfg.sky_condition,
+        receiver_inputs_list=receiver_inputs_list,
+        gate_window_s=gate_window_s,
+        link_mode=link_mode,
+        law_effect=law_effect,
+        provider=provider,
+    )
+
+    manifest_json = build_manifest(
+        mission_config=cfg,
+        resolved_atmosphere=resolved_atmosphere,
+        link_effects=link_effects,
+        link_seed=link_seed,
+        link_controls=link_controls,
+        receiver=receiver,
+        link_mode=link_mode,
+        pdt_config=pdt_config,
+        tau_mem_s=tau_mem_s,
+    )
+
+    return _pass_result_from_profile(pass_geometry, profile, cfg, link_provenance=manifest_json)
+
+
+def _simulate_profile_receiver(
+    axis_values: list[float],
+    channel_states: list[ChannelState],
+    *,
+    detector: DetectorParams,
+    intensities: dict[str, float],
+    n_pulses: int,
+    pi: tuple[float, float, float],
+    pulse_repetition_rate_hz: float,
+    sky_condition: str,
+    receiver_inputs_list: list[ReceiverInputs],
+    gate_window_s: float | None,
+    link_mode: str,
+    law_effect,
+    provider: TableGeometryProvider,
+) -> ProfileResult:
+    """Receiver-active analogue of :func:`simulate_profile` (temporal axis only).
+
+    Reuses the same werner_p/loss/fidelity helpers as the legacy profile
+    core; only the per-sample key-rate computation is replaced by the §1/§5
+    receiver chain (Appendix A -- every other emitted field is unchanged).
+    """
+
+    werner_p_source = _single_werner_source(channel_states)
+    transmittance = [state.transmittance for state in channel_states]
+    loss_db = [_channel_loss_db(eta) for eta in transmittance]
+    min_loss_index = min(range(len(loss_db)), key=loss_db.__getitem__)
+    min_loss_db = loss_db[min_loss_index]
+
+    blocks = []
+    if link_mode == "sampled":
+        for channel, inputs in zip(channel_states, receiver_inputs_list):
+            blocks.append(
+                compute_receiver_block(
+                    channel=channel,
+                    detector=detector,
+                    intensities=intensities,
+                    n_pulses=n_pulses,
+                    pi=pi,
+                    receiver_inputs=inputs,
+                    gate_window_s=gate_window_s,
+                    pulse_repetition_rate_hz=pulse_repetition_rate_hz,
+                )
+            )
+    else:
+        for t, channel, inputs in zip(axis_values, channel_states, receiver_inputs_list):
+            geom = provider.at(t)
+            law = law_effect.stationary_law(geom)
+            blocks.append(
+                compute_receiver_block_pdt(
+                    law=law,
+                    channel_base=channel,
+                    detector=detector,
+                    intensities=intensities,
+                    n_pulses=n_pulses,
+                    pi=pi,
+                    receiver_inputs=inputs,
+                    gate_window_s=gate_window_s,
+                    pulse_repetition_rate_hz=pulse_repetition_rate_hz,
+                )
+            )
+
+    secure_key_rate_per_pulse = [block.secure_key_rate_per_pulse for block in blocks]
+    per_signal = [block.secure_key_rate_per_signal_pulse for block in blocks]
+    availability = [block.availability for block in blocks]
+
+    effective_werner_p = [
+        effective_werner_p_for_sky(
+            eta, werner_p_source, detector.detection_efficiency, sky_condition=sky_condition
+        )
+        for eta in transmittance
+    ]
+    teleportation_results = [teleportation_fidelity(p_eff) for p_eff in effective_werner_p]
+    fidelity = [result.fidelity for result in teleportation_results]
+    classical_bound = teleportation_results[0].classical_bound
+
+    secure_key_yield_bits = _integrate_yield_bits(
+        axis_values, secure_key_rate_per_pulse, pulse_repetition_rate_hz
+    )
+    mean_fidelity = sum(fidelity) / len(fidelity)
+
+    return ProfileResult(
+        axis_values=list(axis_values),
+        transmittance=transmittance,
+        loss_db=loss_db,
+        secure_key_rate_per_pulse=secure_key_rate_per_pulse,
+        effective_werner_p=effective_werner_p,
+        fidelity=fidelity,
+        min_loss_db=min_loss_db,
+        min_loss_index=min_loss_index,
+        secure_key_yield_bits=secure_key_yield_bits,
+        mean_fidelity=mean_fidelity,
+        classical_bound=classical_bound,
+        werner_p_source=werner_p_source,
+        pulse_repetition_rate_hz=pulse_repetition_rate_hz,
+        link_receiver=LinkReceiverProfile(
+            secure_key_rate_per_signal_pulse=per_signal,
+            availability=availability,
+            pi=pi,
+        ),
+    )
+
+
+def _link_receiver_provenance() -> dict[str, str]:
+    """A.4 -- the exact seven-leaf provenance map for ``profile.link_receiver``."""
+
+    return {
+        "profile.link_receiver.secure_key_rate_per_signal_pulse": Provenance.SIMULATED.value,
+        "profile.link_receiver.availability": Provenance.SIMULATED.value,
+        "profile.link_receiver.pi.signal": Provenance.ILLUSTRATIVE.value,
+        "profile.link_receiver.pi.decoy": Provenance.ILLUSTRATIVE.value,
+        "profile.link_receiver.pi.vacuum": Provenance.ILLUSTRATIVE.value,
+        "profile.link_receiver.units.secure_key_rate_per_signal_pulse": (
+            Provenance.ILLUSTRATIVE.value
+        ),
+        "profile.link_receiver.units.availability": Provenance.ILLUSTRATIVE.value,
+    }
 
 
 def simulate_fibre_sweep(config: FibreSweepConfig | None = None) -> FibreSweepResult:
@@ -431,9 +788,14 @@ def _pass_result_from_profile(
     pass_geometry,
     profile: ProfileResult,
     config: MissionConfig,
+    *,
+    link_provenance: str | None = None,
 ) -> PassResult:
     if profile.secure_key_yield_bits is None:
         raise ValueError("Temporal pass profiles must include secure_key_yield_bits.")
+    provenance = _default_provenance()
+    if profile.link_receiver is not None:
+        provenance.update(_link_receiver_provenance())
     return PassResult(
         time_s=profile.axis_values,
         elevation_deg=pass_geometry.elevation_deg,
@@ -451,7 +813,9 @@ def _pass_result_from_profile(
         werner_p_source=profile.werner_p_source,
         pulse_repetition_rate_hz=profile.pulse_repetition_rate_hz,
         mission=_mission_inputs(config),
-        provenance=_default_provenance(),
+        provenance=provenance,
+        link_receiver=profile.link_receiver,
+        link_provenance=link_provenance,
     )
 
 

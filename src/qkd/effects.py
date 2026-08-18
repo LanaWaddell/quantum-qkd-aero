@@ -837,3 +837,70 @@ class DetectorDeadTimeEffect:
         self, t: float, geom: PassGeometry, *, context: EffectEvaluationContext
     ) -> LinkObservables:
         return LinkObservables(detector=DetectorObservables(dead_time_s=self.dead_time_s))
+
+
+# ---------------------------------------------------------------------------
+# LINK-6a -- built-in rate owners (docs/LINK_6A_PLAN.md §6, S1). Constant-
+# parameter owners, LINK-2 pattern: fixed IDs, construction-time domains,
+# ignore ``context`` ("a constant is a function that ignores t"). Not added
+# to the production stack; consumed only by ``qkd.detection`` when a
+# ``ReceiverModel`` is active (LINK-6a plan §1.2 ownership contract).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BackgroundLightEffect:
+    """Absolute incident background-photon rate owner (LINK-6a plan §1.2, §6).
+
+    ``background_rate_hz`` is the **absolute incident** background photon
+    rate at the detector face -- registered via the already-folded
+    ``detection_efficiency`` exactly once, by the receiver wrapper
+    (``qkd.detection``), not here. This effect only carries the raw rate
+    through the LINK-1 seam; it performs no gate-window mapping itself.
+
+    Domain: finite, ``>= 0``, validated at construction via :func:`_require`.
+    Not in the production stack; a receiver-active ``simulate_pass`` call
+    consumes this field via ``qkd.detection.extract_receiver_inputs``.
+    """
+
+    background_rate_hz: float
+    effect_id: str = field(default="background_light", init=False)
+
+    def __post_init__(self) -> None:
+        _require("background_rate_hz", self.background_rate_hz, lo=0.0, hi=math.inf)
+
+    def evaluate(
+        self, t: float, geom: PassGeometry, *, context: EffectEvaluationContext
+    ) -> LinkObservables:
+        return LinkObservables(
+            channel=ChannelObservables(background_rate_hz=self.background_rate_hz)
+        )
+
+
+@dataclass(frozen=True)
+class DetectorDarkRateEffect:
+    """Absolute registered dark-count rate owner, an additional source (LINK-6a plan §1.2, §6).
+
+    ``dark_count_rate_hz`` is the **absolute registered** dark rate of an
+    *additional modeled source*, not a rate-form restatement of
+    ``DetectorParams.dark_count_prob`` (no double counting by contract,
+    plan §1.2) -- a user modeling dark counts entirely in rate form sets
+    ``dark_count_prob = 0`` and supplies this effect instead.
+
+    Domain: finite, ``>= 0``, validated at construction via :func:`_require`.
+    Not in the production stack; a receiver-active ``simulate_pass`` call
+    consumes this field via ``qkd.detection.extract_receiver_inputs``.
+    """
+
+    dark_count_rate_hz: float
+    effect_id: str = field(default="detector_dark_rate", init=False)
+
+    def __post_init__(self) -> None:
+        _require("dark_count_rate_hz", self.dark_count_rate_hz, lo=0.0, hi=math.inf)
+
+    def evaluate(
+        self, t: float, geom: PassGeometry, *, context: EffectEvaluationContext
+    ) -> LinkObservables:
+        return LinkObservables(
+            detector=DetectorObservables(dark_count_rate_hz=self.dark_count_rate_hz)
+        )

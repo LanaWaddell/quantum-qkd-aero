@@ -89,6 +89,52 @@ def main():
 def _build_results(result, *, plot_path):
     headline_key_yield = f"{result.secure_key_yield_bits / 1_000.0:.2f} Kb"
 
+    profile = {
+        "axis": {
+            "name": "time_s",
+            "values": result.time_s,
+        },
+        "transmittance": result.transmittance,
+        "loss_db": result.loss_db,
+        "secure_key_rate_per_pulse": result.secure_key_rate_per_pulse,
+        "effective_werner_p": result.effective_werner_p,
+        "fidelity": result.fidelity,
+        "aggregates": {
+            "min_loss_db": result.min_loss_db,
+            "min_loss_axis_value": result.time_s[result.min_loss_index],
+            "secure_key_yield_bits": result.secure_key_yield_bits,
+            "mean_fidelity": result.mean_fidelity,
+        },
+    }
+    # LINK-6a (docs/LINK_6A_PLAN.md §1.1, Appendix A.1): emitted only when a
+    # receiver is active; absent -- not null -- on the default path.
+    link_receiver = getattr(result, "link_receiver", None)
+    if link_receiver is not None:
+        profile["link_receiver"] = {
+            "secure_key_rate_per_signal_pulse": link_receiver.secure_key_rate_per_signal_pulse,
+            "availability": link_receiver.availability,
+            "pi": {
+                "signal": link_receiver.pi[0],
+                "decoy": link_receiver.pi[1],
+                "vacuum": link_receiver.pi[2],
+            },
+            "units": {
+                "secure_key_rate_per_signal_pulse": "bits/signal-pulse",
+                "availability": "dimensionless",
+            },
+        }
+
+    run_metadata = {
+        "generator": "run.py",
+        "pipeline": "mission.simulate_pass",
+        "physics_mode": "computed",
+    }
+    # LINK-6a (plan §4): the canonical-JSON manifest string, emitted only
+    # when a receiver/PDT-active run produced one -- absent on default runs.
+    link_provenance = getattr(result, "link_provenance", None)
+    if link_provenance is not None:
+        run_metadata["link_provenance"] = link_provenance
+
     return {
         "schema_version": "2.0",
         "link": {
@@ -106,23 +152,7 @@ def _build_results(result, *, plot_path):
             "headline_key_yield": headline_key_yield,
             "headline_fidelity": f"{result.mean_fidelity:.3f}",
         },
-        "profile": {
-            "axis": {
-                "name": "time_s",
-                "values": result.time_s,
-            },
-            "transmittance": result.transmittance,
-            "loss_db": result.loss_db,
-            "secure_key_rate_per_pulse": result.secure_key_rate_per_pulse,
-            "effective_werner_p": result.effective_werner_p,
-            "fidelity": result.fidelity,
-            "aggregates": {
-                "min_loss_db": result.min_loss_db,
-                "min_loss_axis_value": result.time_s[result.min_loss_index],
-                "secure_key_yield_bits": result.secure_key_yield_bits,
-                "mean_fidelity": result.mean_fidelity,
-            },
-        },
+        "profile": profile,
         "geometry": {
             "elevation_deg": result.elevation_deg,
             "slant_range_km": result.slant_range_km,
@@ -133,11 +163,7 @@ def _build_results(result, *, plot_path):
         },
         "mission": result.mission,
         "provenance": result.provenance,
-        "run_metadata": {
-            "generator": "run.py",
-            "pipeline": "mission.simulate_pass",
-            "physics_mode": "computed",
-        },
+        "run_metadata": run_metadata,
     }
 
 

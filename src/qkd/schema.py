@@ -16,16 +16,36 @@ class SchemaValidationError(ValueError):
     """Raised when a results payload does not match a known schema."""
 
 
+_LINK_RECEIVER_UNITS = {
+    "secure_key_rate_per_signal_pulse": "bits/signal-pulse",
+    "availability": "dimensionless",
+}
+_LINK_RECEIVER_KEYS = frozenset(
+    {"secure_key_rate_per_signal_pulse", "availability", "pi", "units"}
+)
+_LINK_RECEIVER_PI_KEYS = frozenset({"signal", "decoy", "vacuum"})
+
+
 VALID_LINK_MEDIA = frozenset({"atmospheric", "fibre"})
 VALID_LINK_TOPOLOGIES = frozenset({"point_to_point"})
 VALID_LINK_PROTOCOLS = frozenset({"decoy_bb84"})
 VALID_PROFILE_AXES = frozenset({"time_s", "length_km"})
 
-DECLARED_SCHEMA_EXTENSIONS: dict[str, set[str]] = {}
+DECLARED_SCHEMA_EXTENSIONS: dict[str, set[str]] = {
+    "profile": {"link_receiver"},
+    "run_metadata": {"link_provenance"},
+}
 """Explicitly allowed extension keys by containing section path.
 
 Unknown top-level sections and unknown keys inside known sections fail unless
 they are declared here. A declared key is treated as an extension-owned subtree.
+
+LINK-6a (``docs/LINK_6A_PLAN.md`` §12, Appendix A) adds exactly the two
+entries above; the generic recursive validator (:func:`_validate_known_keys`)
+does not recurse into a declared-extension subtree's own vocabulary --
+:func:`_validate_link_receiver_extension` and
+:func:`_validate_link_provenance_extension` are the dedicated closed-world
+light validators for each (Appendix A.1/A.2, A.5).
 """
 
 ATOL = 1e-6
@@ -130,11 +150,105 @@ def validate_results_schema(results: Mapping[str, Any], *, deep: bool = True) ->
         _validate_ranges(results)
         _validate_constants(results)
         _validate_consistency(results)
+        _validate_link_receiver_extension(results)
+        _validate_link_provenance_extension(results)
         try:
             validate_provenance(results, results["provenance"])
         except ProvenanceValidationError as exc:
             raise SchemaValidationError(str(exc)) from exc
     return True
+
+
+def _validate_link_receiver_extension(results: Mapping[str, Any]) -> None:
+    """A.1 -- the closed-world ``profile.link_receiver`` light validator."""
+
+    profile = results["profile"]
+    if "link_receiver" not in profile:
+        return
+    link_receiver = _require_mapping(profile["link_receiver"], "profile.link_receiver")
+    extra = set(link_receiver) - _LINK_RECEIVER_KEYS
+    if extra:
+        raise SchemaValidationError(
+            f"profile.link_receiver has unknown key(s): {sorted(extra)}."
+        )
+    missing = _LINK_RECEIVER_KEYS - set(link_receiver)
+    if missing:
+        raise SchemaValidationError(
+            f"profile.link_receiver is missing key(s): {sorted(missing)}."
+        )
+
+    axis_length = len(profile["axis"]["values"])
+
+    rate_values = _require_numeric_array(
+        link_receiver["secure_key_rate_per_signal_pulse"],
+        "profile.link_receiver.secure_key_rate_per_signal_pulse",
+    )
+    if len(rate_values) != axis_length:
+        raise SchemaValidationError(
+            "profile.link_receiver.secure_key_rate_per_signal_pulse must have "
+            "the same length as profile.axis.values."
+        )
+    for index, value in enumerate(rate_values):
+        _require_minimum(
+            value, 0.0, f"profile.link_receiver.secure_key_rate_per_signal_pulse[{index}]"
+        )
+
+    availability_values = _require_numeric_array(
+        link_receiver["availability"], "profile.link_receiver.availability"
+    )
+    if len(availability_values) != axis_length:
+        raise SchemaValidationError(
+            "profile.link_receiver.availability must have the same length as "
+            "profile.axis.values."
+        )
+    for index, value in enumerate(availability_values):
+        if not (0.0 < value <= 1.0):
+            raise SchemaValidationError(
+                f"profile.link_receiver.availability[{index}] must be in (0, 1]."
+            )
+
+    pi = _require_mapping(link_receiver["pi"], "profile.link_receiver.pi")
+    if set(pi) != _LINK_RECEIVER_PI_KEYS:
+        raise SchemaValidationError(
+            "profile.link_receiver.pi must have exactly the keys "
+            f"{sorted(_LINK_RECEIVER_PI_KEYS)}."
+        )
+    from qkd.detection import PI_SUM_TOLERANCE
+
+    total = 0.0
+    for key in _LINK_RECEIVER_PI_KEYS:
+        value = _require_finite_number(pi[key], f"profile.link_receiver.pi.{key}")
+        if value <= 0.0:
+            raise SchemaValidationError(f"profile.link_receiver.pi.{key} must be > 0.")
+        total += value
+    if abs(total - 1.0) > PI_SUM_TOLERANCE:
+        raise SchemaValidationError(
+            f"profile.link_receiver.pi must sum to 1 within PI_SUM_TOLERANCE; got {total!r}."
+        )
+
+    units = _require_mapping(link_receiver["units"], "profile.link_receiver.units")
+    if dict(units) != _LINK_RECEIVER_UNITS:
+        raise SchemaValidationError(
+            f"profile.link_receiver.units must equal {_LINK_RECEIVER_UNITS!r}; got {dict(units)!r}."
+        )
+
+
+def _validate_link_provenance_extension(results: Mapping[str, Any]) -> None:
+    """A.2 -- the closed-world ``run_metadata.link_provenance`` light validator."""
+
+    run_metadata = results["run_metadata"]
+    if "link_provenance" not in run_metadata:
+        return
+    value = run_metadata["link_provenance"]
+    if not isinstance(value, str):
+        raise SchemaValidationError("run_metadata.link_provenance must be a string.")
+
+    from qkd.replay import ManifestValidationError, _validate_manifest_json
+
+    try:
+        _validate_manifest_json(value)
+    except ManifestValidationError as exc:
+        raise SchemaValidationError(str(exc)) from exc
 
 
 def load_results(path: str | Path, *, deep: bool = True) -> dict[str, Any]:
