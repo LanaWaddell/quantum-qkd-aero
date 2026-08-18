@@ -1,24 +1,30 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
-> **REVISION 12 — updated 2026-07-17.** This revision records LINK-0 completion:
-> ADR-0003 (composable link-effect pipeline) is **RATIFIED** by the PI with body
-> text unchanged, following an independent literature contact at ratification
-> (Singh et al., arXiv:2507.08102, Oblak group / UCalgary IQST); the evidence
-> memo concluded no amendment was required, and the deliberately deferred
-> §3.3.1 rules remain deferred to LINK-1, now with recorded evidence for their
-> discharge (quadrature composition of independent temporal broadening;
-> sin²(∆ϕ) low-order misalignment model). New reference documents live under
-> `docs/references/` (paper digest + ratification evidence memo) and
-> `docs/GLOSSARY.md` is added (binding vocabulary per ADR-0003 §6 plus the
-> community-translation boundary). This is a documentation-only revision: no
-> code, schema, or physics change; test counts are unchanged from Revision 11
-> (163 passed with qiskit; 142 with
-> `--ignore=tests/test_teleportation_qiskit.py`; delta 0, as planned). A scoped
-> follow-up (separate commit) adds two honesty declarations identified during
-> the literature review: the teleportation lane's ideal-BSM conditioning and
-> the implementation's implicit encoding assumption. **LINK-1 is now the active
-> lane.** Historical corrections and superseded counts/statuses are preserved
-> in the Correction Log rather than repeated as current body facts.
+> **REVISION 13 — updated 2026-08-18.** Reconciles the record for the entire
+> ADR-0003 LINK queue and the TWIN lane, all committed and pushed between
+> 2026-08-10 and 2026-08-17: **LINK-1** (contracts + identity behaviour),
+> **LINK-2** (production-effect migration, byte-parity certified), **LINK-3**
+> (exact range-rate, Doppler/pointing hooks), **LINK-4** (seeded scintillation
+> fading + pointing jitter, stationary-law PDT surface), **LINK-5** (source
+> partition, afterpulsing, dead time as typed bridge-rejected effects),
+> **TWIN-1** (reference Kalman twin + calibrated innovation diagnostic),
+> **TWIN-2** (private-probe watermark primitive), and **LINK-6a** (QKD receiver
+> model, gated detection, PDT consumption, replay/benchmark layer). Every one
+> of these eight PRs left the default `outputs/results.json` emission
+> **byte-identical** (SHA-256 `3d1544027517…f1417`, recertified per commit on a
+> fresh clone in this revision). Suite: **562 passed** with the qiskit extra;
+> **541 passed** with `--ignore=tests/test_teleportation_qiskit.py`
+> (541 + 1 skipped without qiskit installed). Working method **under trial** in
+> this period (not yet adopted as standing practice): top-tier Claude drafts plans
+> and performs independent verification, a Sonnet subagent implements against the
+> approved plan, Echo (and once Chat Claude) provide adversarial pre-dispatch review
+> — LINK-6a went through four review cycles before dispatch. Codex remains the
+> fallback implementer; the PI will decide after a longer trial, with weekly usage
+> limits as an explicit criterion. Two strategy notes were deliberately kept out
+> of the public repo (`docs/private/`, gitignored, rule pushed in `5b530ca`).
+> **LINK-6b, source consumption, receiver-aware Eve, TWIN-3, and the QCC
+> proposal mapping are the open lanes.** Historical corrections and superseded
+> counts/statuses are preserved in the Correction Log.
 
 **Scope of this document:** a phase-by-phase record of the Phase 2B physics build —
 what was implemented, how it was verified, the honesty guards in place, the file
@@ -28,9 +34,13 @@ to read this plus `docs/INTERFACES.md` and `docs/PHASE_2B6_SEQUENCE.md` and pick
 exactly where the work stands.
 
 Repo: `github.com/LanaWaddell/quantum-qkd-aero` · local: `Quantum-QKD-Aero/`
-Working method: Claude = physics/architecture critic + reference-code author
-(verifies in a sandbox); Codex = repo-access implementation engineer; Echo =
-systems-level integrator/reviewer; Lana = PI. **All agent outputs are verified, not
+Working method (trial since 2026-08-10, **not yet standing practice**): top-tier Claude =
+plan author, physics/architecture critic, independent verifier (cloud sandbox clone);
+Sonnet subagent = implementation engineer against the approved plan *on trial* — Codex
+(the implementer through Rev 12) remains the fallback, and the PI will choose after a
+longer run with weekly usage limits as an explicit criterion; Echo = adversarial
+pre-dispatch reviewer (Chat Claude consulted once, LINK-6a v2.1); Lana = PI (normative
+decisions, local certification, commit/push). **All agent outputs are verified, not
 trusted.** Standing review rule (adopted 2026-06-27): before proposing architectural
 change, enumerate every executable entry point, every artifact writer, and every
 external consumer — the error above was an execution-graph blind spot, not a physics one.
@@ -63,7 +73,16 @@ now fail fast on impossible values, mismatched array dimensions, undeclared sche
 dimensionally invalid aggregates, algebraic inconsistencies, or provenance drift.
 ADR-0003 then records the next architecture lane without implementing it: LINK is the
 future composable channel-physics layer downstream of ADR-0002's
-medium/topology/protocol frame.
+medium/topology/protocol frame. LINK-1 through LINK-6a then *implement* that lane
+(Rev 13): every existing loss/detector constant became a fixed-ID production effect on a
+stack that is evaluated on every call, new physics enters only as declared, typed,
+bridge-rejected observables until an estimator explicitly consumes them, and the first
+consumer (LINK-6a's QKD receiver model) does so through a declared control surface, a
+canonical replay manifest, and an unchanged `bb84.py`. In parallel the TWIN lane built
+the digital-twin diagnostic substrate (reference Kalman twin, calibrated whiteness/NIS,
+private-probe watermark) whose central theorem — passive observation of an
+exactly-law-matched replacement is blind, and the blindness is gain-independent — is
+demonstrated as ensemble behaviour, not asserted.
 
 The discipline throughout otherwise holds: if a quantity isn't checked against a
 known-true value or a structural invariant, it isn't trusted — and verification
@@ -92,13 +111,26 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **PR-C** | **Fibre length sweep as second caller of `simulate_profile`** | ✅ committed in Rev 9 (6f0527d) |
 | **PR-D** | **Deep schema validation and dimensional correction** | ✅ committed |
 | **ADR-0003 / LINK-0** | **Composable link-effect pipeline architecture contract** | Ratified (2026-07-17) |
+| **LINK-1** | Composable link-effect contracts, geometry wrapper, identity behaviour | ✅ `8b7ef46` (2026-08-10) |
+| **LINK-2** | Loss/detector constants → fixed-ID production effects, byte-parity certified | ✅ `803f854` (2026-08-10) |
+| **LINK-3** | Exact range-rate of the declared orbit; opt-in Doppler + pointing-bias hooks | ✅ `223d25c` (2026-08-10) |
+| **LINK-4** | Seeded scintillation fading + pointing jitter; unit-mean declaration; stationary-law PDT surface | ✅ `4df5b7f` (2026-08-10) |
+| **LINK-5** | Source partition + μ fluctuation, afterpulsing, dead time as typed bridge-rejected effects | ✅ `bdd73de` (2026-08-10) |
+| **TWIN-1** | Reference Kalman twin + calibrated innovation diagnostic (whiteness + two-sided NIS) | ✅ `eeea12e` (2026-08-11) |
+| **TWIN-2** | Private-probe watermark primitive; passive blindness gain-independent; relay blind by identity | ✅ `60ff5a1` (2026-08-11) |
+| **LINK-6a** | QKD receiver model, gated detection, `gate_window_s` control, PDT consumption, replay manifest, benchmark contract | ✅ `2763c24` (2026-08-17) |
 
-**Test suite (current Rev-10 count):** with the qiskit extra available, the suite is
-**163 passed** (`qkd_env/bin/python -m pytest -q`). The base suite excluding
-Qiskit-specific tests is **142 passed**
-(`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`).
-Delta from Rev 9: **+22 collected tests**, mostly deep schema goldens, mutation
-negatives, and dimensional guards.
+**Test suite (current Rev-13 count, recertified on a fresh clone of `2763c24`):** with the
+qiskit extra available, **562 passed** (`python -m pytest -q`). Excluding the Qiskit-specific
+file, **541 passed** (`--ignore=tests/test_teleportation_qiskit.py`); without qiskit
+installed the same suite reports **541 passed, 1 skipped**. Certification counts are
+environment-conditional and must name the environment. Per-commit history (full / no-qiskit-file,
+all recomputed 2026-08-18): `03736da` 163/142 → LINK-1 `8b7ef46` 219/198 → LINK-2 `803f854`
+255/234 → LINK-3 `223d25c` 294/273 → LINK-4 `4df5b7f` 347/326 → LINK-5 `bdd73de` 389/368 →
+TWIN-1 `eeea12e` 414/393 → TWIN-2 `60ff5a1` 439/418 → LINK-6a `2763c24` 562/541. Default
+emission SHA-256 `3d1544027517197062097234d272ecbfbc03cd1864bbd0ee46169cf1250f1417` at every
+one of these commits (byte identity is environment-local — Mac arm64/numpy 2.4.6 vs cloud
+x86_64/numpy 2.4.4 differ at the ULP; the in-process parity tests are the portable oracle).
 
 `python src/qkd/run.py` still prints `Min loss 27.7 dB | Fidelity 0.990` (verified).
 `python src/qkd/run_fibre.py` prints
@@ -448,6 +480,112 @@ Development Record.
   axis-agnostic v2 artifact. `docs/SCHEMA_HARDENING_2B.md` is preserved with a dated
   supersession note because its field-level details were for the older pre-fibre stub.
 
+
+### LINK-1 → LINK-5 — the ADR-0003 queue implemented (2026-08-10)
+**Plans:** `docs/LINK_1_PLAN.md` … `docs/LINK_5_PLAN.md` (each carries its Echo review
+reconciliation and an implementation record). **Files:** `src/qkd/link.py` (contracts:
+`ChannelEffect`/`GeometryProvider` Protocols, `LinkObservables` partition
+channel/detector/source, `ChannelStack`, `EffectEvaluationContext`, `ControlSpec`/
+`Controllable`, seeded child-RNG derivation, `apply_link_state` bridge, audit record),
+`src/qkd/effects.py` (all built-in effects), `mission.py` (stack-always composition),
+`tests/test_link.py`, `tests/test_effects.py`, `tests/test_link3_effects.py`,
+`tests/test_link4_effects.py`, `tests/test_link5_effects.py`, `tests/test_orbit_velocity.py`.
+
+- **LINK-1** — identity-only interfaces; `link_effects=None`/`[]` byte-identical; the
+  bridge raises on any non-identity field it has no consumer for (the *estimator
+  boundary*): new physics cannot silently leak into results.
+- **LINK-2** — the four existing factors (`system_efficiency`, `atmospheric_absorption`,
+  `geometric_loss`, `detector_qe`) migrated into fixed-ID production effects assembled
+  on **every** call (no second code path); parity certified by an in-process oracle
+  against an independent inline reference, plus a "no opt-in LINK features" language rule.
+- **LINK-3** — exact analytic range-rate of the declared circular orbit (closed form with
+  the sin γ cancellation, verified against central differences with a convergence check);
+  first-order Doppler (`frequency_offset_hz`) and pointing-bias hooks emitted as
+  bridge-rejected observables.
+- **LINK-4** — seeded stochastic effects with order-independent per-effect child RNG streams
+  (`SeedRequiredError` when a stochastic effect runs on an unseeded stack); scintillation
+  fading (log-normal, weak-turbulence Rytov guard, unit-mean declaration partition-aware);
+  pointing jitter; `stationary_law(geom)` exposed for the future PDT consumer.
+- **LINK-5** — source partition (`intensity_factor` via `MuFluctuationEffect`),
+  `DetectorAfterpulsingEffect(afterpulse_prob)`, `DetectorDeadTimeEffect(dead_time_s)` as
+  typed, bridge-rejected observables; the epistemic boundary (physics/trust wall) made
+  binding at the emission layer. Sonnet-subagent-caught detail: CPython `**`/`math.exp`
+  raise `OverflowError` rather than returning `inf`, so overflow guards are explicit.
+
+### TWIN-1 / TWIN-2 — digital-twin diagnostic substrate (2026-08-11)
+**Plans:** `docs/TWIN_1_PLAN.md`, `docs/TWIN_2_PLAN.md`; normative sequencing in
+`docs/notes/NOTE-sequencing-2026-08-10.md` (amended 2026-08-12: the Exp-1 gate split so a
+*synthetic* Route-2 primitive is authorized while link instantiation stays Exp-1-gated;
+TWIN-3 = finite-window power study registered). **Files:** `src/qkd/twin.py`,
+`src/qkd/twin_watermark.py`, `tests/test_twin_whiteness.py`, `tests/test_twin_watermark.py`.
+
+- **TWIN-1** — stateless batch Kalman filter (Joseph form) as the reference twin;
+  scalar Ljung–Box on standardized innovations + two-sided NIS; frozen
+  `DiagnosticCalibration` objects with precomputed χ² values (no SciPy); calibration
+  proven as **ensemble behaviour** — the α-test rejects at ≈ α, with exact-binomial bands
+  ([3, 19]/200 at α = 0.05) predeclared before seed pinning and fresh held-out review
+  seeds. Echo's R1 replaced single-run "must not flag" assertions with this calibration.
+- **TWIN-2** — private-probe (dynamic watermarking) primitive: probe/innovation
+  cross-correlation detects *synthesis* and *replay* attacks; passive observation stays
+  blind under exact law matching (`q_synth = q + g²σ_u²`), and the blindness is
+  **gain-independent** — discovered during review, not planned; relay is blind by
+  identity. Frozen-parameter honesty episode: the plan froze `g_modest = 0.1` with a
+  ≥ 0.9 power floor that was unattainable (~0.80 with the 5-lag χ²₅ detector); the
+  subagent refused to tune a frozen value and shipped a documented 0.6 floor; review
+  corrected `g_modest → 0.15` (power 0.997) and restored the 0.9 floor.
+
+### LINK-6a — Estimator integration I: QKD receiver model (2026-08-17)
+**Plan:** `docs/LINK_6A_PLAN.md` v2.3.1 with §14 implementation record; reviews
+`docs/LINK_6A_REVIEW.md`, `_V2_`, `_V21_`, `_V22_`, `_V23_`, `_V231_REVIEW.md` (Echo, six
+cycles; Chat Claude reviewed v2.1). **Created:** `src/qkd/detection.py`, `src/qkd/replay.py`,
+`src/qkd/benchmark.py`, `tests/test_detection.py`, `tests/test_link6a.py`,
+`tests/test_replay.py`. **Modified:** `effects.py` (+`BackgroundLightEffect`,
+`DetectorDarkRateEffect`), `mission.py`, `run.py`, `schema.py`, and — flagged, PI-accepted —
+`tests/fixtures/pr_a_pre_refactor_satellite_output.json` (two `null` keys, because an
+existing test compares `asdict(PassResult)` key sets and the approved trailing optional
+fields extend it; values `None`; no emitted default-path field changed; no `.py` test edited).
+`bb84.py`, `link.py` untouched.
+
+- **Receiver physics (frozen after review):** shared-history mean-field afterpulse model
+  across interleaved intensities (`Q̄ = Σπ_x Q_x`, `Q̄_reg = Q̄/(1−p_ap(1−Q̄))`,
+  `a = p_ap Q̄_reg`, `Q'_x = 1−(1−Q_x)(1−a)`, `T'_x = T_x + ½(1−Q_x)a`), calibrated
+  `(p_ap, τ_d)` operating pair, **one common** non-paralyzable availability
+  `A = 1/(1+R_click τ_d)` with `R_click = f_rep·Q̄_reg` exactly (decoy homogeneity:
+  `Y1_L(AQ) = A·Y1_L(Q)`, `e1_U` invariant — tested to 1e-16); gated noise
+  `p_noise = 1−(1−y0)(1−p_bg)(1−p_dk)` entering the unchanged estimator through the
+  `y0` slot by calling the public `run_decoy_bb84` on a detector copy (both certified base
+  laws inherited); post-afterpulse `Q'_vacuum` — never raw `p_noise` — is the estimator's
+  vacuum yield. Precomputed anchor `A = 0.918124082928941429…` (a v2.1 transcription
+  error was caught by both reviewers) asserted to ≥ 12 digits.
+- **Contract layer:** `simulate_pass(..., receiver=None, link_mode="sampled", pdt_config=None)`
+  — explicit activation only; `gate_window_s` is the first *production* declared control
+  (union registry built at mission level, owner-partitioned, required-when-consumed, no silent
+  default); canonical `profile.secure_key_rate_per_pulse` stays the delivered per-protocol-
+  pulse rate so the L5 yield law holds unmodified; `profile.link_receiver` diagnostic subtree
+  and `run_metadata.link_provenance` canonical-JSON replay manifest as the only two new
+  `DECLARED_SCHEMA_EXTENSIONS`, both absent on the default path; closed-world
+  `replay_from_provenance` through the real simulation path (byte-identical round-trip
+  in-process, sampled and PDT); `audit_spec()` protocol for unregistered custom effects.
+- **PDT mode:** closed-world `PDT_ADMISSIBLE_EFFECTS` allowlist by `effect_id`; exactly one
+  law effect (`scintillation_fading`) which must be **last** and is never `evaluate()`d —
+  the deterministic prefix is built with `seed=None` so `SeedRequiredError` traps any RNG
+  request; 21-node Gauss–Hermite with 41-node convergence; unbounded log-normal with tail/
+  node validity guards (never clip); `PdtConfig` with `τ_mem = τ_d + 1/f_rep` memory guard,
+  stationarity guard, and `block_duration_s` bound to the actual uniform profile grid;
+  observed-statistics ratios `Q̂ = E[A·Q']/E[A]` (conditional-then-average, convex-mixture
+  justification recorded). PDT vs a sampled ensemble agrees to 3e-4 in the small-σ regime and
+  diverges by design under strong nonlinearity (`R(E_w[Q'])` vs `E_f[R]`).
+- **Decisions of record:** receiver and Eve are mutually exclusive in 6a (a later PR must
+  promote one canonical public anomaly helper or reuse the public Eve pipeline — never a
+  third formula); `benchmark.py` is contract-complete (artifact schema, validator,
+  calibrated-pair sweep refusal, model-derived crossing) with no sweep driver until the
+  first advantage claim is made.
+- **Verification-driven fixes before merge:** the subagent's "exact" identity clauses were
+  softened (`1−(1−y0)` rounding at the live `y0 = 1e-6`; `approx(abs=1e-12)` tests) — now
+  exact short-circuits with strict `==`; missing `SeedRequiredError` trap and PDT-vs-sampled
+  ensemble tests added; per-sample dead-time/afterpulse invariance guard; boundary and A.5
+  validator-matrix tests completed. Final: 562/541, emission hash unchanged.
+
 ---
 
 ## 3. Module & contract inventory
@@ -461,7 +599,16 @@ wrapper), `provenance.py`
 `run.py` (satellite I/O and plotting only, with pre-write schema/provenance validation),
 `run_fibre.py` (fibre-sweep I/O and plotting only, with pre-write schema/provenance
 validation), and `schema.py` (v2-only L1 recognizer plus L2-L5 deep validator; the old
-orbital `V2_REQUIRED_KEYS` stub is retired).
+orbital `V2_REQUIRED_KEYS` stub is retired). **LINK/TWIN additions (Rev 13):** `link.py` (ADR-0003
+contracts, `ChannelStack`, seeded child RNG, `apply_link_state` bridge, control registry,
+audit record — untouched since LINK-5), `effects.py` (thirteen built-in effects: four
+production, LINK-3/4/5 opt-ins, LINK-6a's two rate owners), `detection.py` (QKD receiver
+model, gated detection, PDT admission/quadrature/guards), `replay.py` (manifest, effect
+codecs, `replay_from_provenance`, `LINK_PIPELINE_VERSION`), `benchmark.py` (artifact
+contract + validator), `twin.py` (reference Kalman twin + calibrated diagnostics),
+`twin_watermark.py` (private-probe primitive). `mission.py` composes the stack on every
+call and owns the union control registry. `DECLARED_SCHEMA_EXTENSIONS` now holds exactly
+`profile → link_receiver` and `run_metadata → link_provenance`.
 
 **Legacy decorative path — retired in PR0/2B-6a:**
 - `qkd_model.py` (repo root) — second entry point; deleted in PR0.
@@ -472,6 +619,13 @@ orbital `V2_REQUIRED_KEYS` stub is retired).
 - Stale root `./results.json` (pre-nesting flat shape, no current writer) — `git rm` in PR0.
 - The retirement is documented in `docs/architecture/ADR-0001-single-authoritative-pipeline.md`.
 
+Docs (Rev 13 additions): `docs/LINK_1_PLAN.md`…`LINK_5_PLAN.md`, `docs/LINK_6A_PLAN.md`
+(+ six `LINK_6A_*REVIEW.md`), `docs/TWIN_1_PLAN.md`, `docs/TWIN_2_PLAN.md`,
+`docs/notes/NOTE-sequencing-2026-08-10.md` (normative lane sequencing),
+the Kalman note (v2.1, project KB — not in repo). **Private, gitignored, never pushed:**
+`docs/private/NOTE-qcc-track-alignment-2026-08-11.md` (Quantum City Challenge fibre-sensing
+track strategy; proposal due Nov 2026) and `docs/private/NOTE-qdish-alignment-2026-08-11.md`
+(defence-hub framing; private indefinitely) — the ignore rule itself is public (`5b530ca`).
 Docs: `docs/INTERFACES.md` (canonical v2 contract),
 `docs/architecture/ADR-0002-three-axis-quantum-link-model.md` (three-axis link frame),
 `docs/architecture/ADR-0003-composable-link-effect-pipeline.md` (ratification-ready
@@ -548,47 +702,65 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
 8. **PR-D — Deep schema validation and dimensional correction: complete.** The active
    v2 schema validator now enforces L2-L5, declared-extension vocabulary, provenance
    coverage, and the axis-conditional `secure_key_yield_bits` rule.
-9. **ADR-0003 / LINK-0 — Composable link-effect pipeline: ratified (2026-07-17).**
-   The architecture contract in `docs/architecture/` is ratified with body text
-   unchanged; the ADR's status log records the review and evidence history
-   (arXiv:2507.08102 consulted at ratification; evidence memo concluded no
-   amendment required). Reference documents live under `docs/references/`
-   (paper digest + evidence memo) and `docs/GLOSSARY.md` carries the binding
-   vocabulary and community-translation boundary. LINK remains a new lane
-   distinct from PR-A/B/C/D and from ADR-0002's medium/topology/protocol
-   axes. LINK-1 and later remain future work; no `ChannelEffect`,
-   `GeometryProvider`, `ControlSpec`, `ChannelStack`, source module, test, or
-   schema field exists yet. LINK-1 opens with two evidence-discharged deferred
-   rules (quadrature composition for independent temporal broadening, paper
-   Eq. 28; sin²(∆ϕ) low-order misalignment default) plus the deferred
-   fibre/PathProvider placement decision. A separate scoped follow-up commit
-   adds the teleportation-lane ideal-BSM conditioning declaration and the
-   implicit encoding-assumption declaration.
+9. **ADR-0003 / LINK-0 — ratified (2026-07-17)**, and **LINK-1 → LINK-6a implemented
+   (2026-08-10 → 08-17)** — see §2 and the §1 per-commit table. The estimator boundary now
+   has one consumer (LINK-6a's receiver); every other declared observable remains
+   bridge-rejected until its own PR.
+10. **TWIN-1 / TWIN-2 complete (2026-08-11)** — synthetic Route-2 primitive authorized by the
+   amended sequencing note; link instantiation of Route 2 stays **Exp-1-gated**.
 
-**Further out (updated):** LINK-1 may add identity-only interfaces for composable link
-effects after ADR-0003 sign-off, with byte-identical empty/identity behavior as the
-first guard. Phase 2C broader mission orchestration grows from the
-`simulate_pass` composition layer rather than inventing a second composition point.
-Phase 2D trust/cognitive work reads `PhysicsSignals` and/or emitted physics outputs (the
-wall holds — no trust field in physics). Coherence-enhancement optimization can operate
-over filtering levers Δt/bandwidth/FOV vs. signal loss, with `f_rep` held fixed as
-hardware. The applied target (Quantum City municipal-fibre proposal) reuses this verified
-substrate by swapping the channel front-end; the CQN layer in that proposal maps onto
-Phase 2D.
+**Open lanes (not yet sequenced; a sequencing decision is the next PI call):**
+- **LINK-6b** — consume `frequency_offset_hz`, `timing_jitter_s`, `misalignment_error`
+  (feasibility coupling to `gate_window_s` attaches to the existing control identity).
+- **Source consumption** — LINK-5 gate items 1–2 (`intensity_factor` into the estimator).
+- **Receiver-aware Eve** — through the LINK-6a R6 path; one canonical anomaly helper.
+- **Benchmark sweep driver** — `outputs/benchmark_*.json` producer, tied to the first real
+  advantage claim (the QCC mapping memo / chosen advantage parameter).
+- **TWIN-3** — finite-window power study (registered in the sequencing note).
+- **QCC proposal skeleton** — Project Overview / Scientific & Technical Approach /
+  Performance Analysis & Benchmarking / Supporting Documentation, per the technical package;
+  route-to-demonstration required; strategy note is private.
+- **Exp 3B / Route-2 link instantiation** — Exp-1-gated.
+
+**Further out (unchanged in substance):** Phase 2C orchestration grows from `simulate_pass`;
+Phase 2D trust/cognitive work reads `PhysicsSignals`/emitted outputs (the wall holds — no
+trust field in physics; ADR-0002/ADR-0003 boundary now enforced at emission);
+coherence-enhancement optimization over Δt/bandwidth/FOV; SENSE lane / ADR-0004 if the
+fibre-sensing track proceeds.
 
 **Schema decision (standing):** v2.0 emission and L2-L5 validator hardening are now
 complete for the current axis-agnostic artifact. Future schema expansion should use
 `DECLARED_SCHEMA_EXTENSIONS` deliberately and update `docs/PR_D_SCHEMA_HARDENING.md`
 with the new contract rather than silently accepting extras.
 
-**If picking up fresh:** read this + `docs/INTERFACES.md` + `docs/PHASE_2B6_SEQUENCE.md`;
-run the validation commands listed in §1; reconcile any module against the actual repo
+**If picking up fresh:** read this + `docs/INTERFACES.md` + `docs/architecture/ADR-0003-…` +
+`docs/notes/NOTE-sequencing-2026-08-10.md` + the latest `LINK_*`/`TWIN_*` plan's implementation
+record; run the validation commands listed in §1 and name the environment; reconcile any module against the actual repo
 file (not a remembered version) before editing; enumerate entry points / artifact writers
 / consumers first.
 
 ---
 
 ## Correction Log
+
+- **2026-08-18 (Rev 13).** Reconciled the record for LINK-1 → LINK-6a and TWIN-1/2 (eight
+  code PRs, `8b7ef46` → `2763c24`, plus `03736da` licence/citation housekeeping and
+  `5b530ca` gitignore). Superseded body facts from Rev 12 preserved here: "LINK-1 and later
+  remain future work; no `ChannelEffect`, `GeometryProvider`, `ControlSpec`, `ChannelStack`,
+  source module, test, or schema field exists yet" (true 2026-07-17; all now exist);
+  "Test suite (current Rev-10 count) 163/142" (now 562/541); the working-method line naming
+  Codex as sole implementer (Sonnet subagent on trial since 2026-08-10; Codex remains the
+  fallback pending the PI's decision); §4 "Further out: LINK-1 may add
+  identity-only interfaces". Per-commit certification recomputed on a fresh clone
+  2026-08-18 (full / no-qiskit-file): 163/142, 219/198, 255/234, 294/273, 347/326, 389/368,
+  414/393, 439/418, 562/541; default emission SHA-256 `3d1544027517…f1417` at every commit.
+  Post-push verification of `2763c24` (Claude, 2026-08-18): fresh public clone; nothing under
+  `docs/private/` tracked; all twelve delivered files hash-identical to the verified copies;
+  Echo's four dispatch-gate reviews byte-identical to their published SHA-256s; 562 passed;
+  emission hash unchanged. Recorded honestly: LINK-6a's implementation touched one existing
+  test *fixture* (two null keys) — see §2 LINK-6a; and its plan went through v1 → v2 → v2.1
+  → v2.2 → v2.3 → v2.3.1, with real defects caught at each stage (including a wrong numerical
+  anchor authored by Claude and softened "exact" tests authored by the subagent).
 
 - **2026-07-17 (Rev 12).** Reconciled the record for LINK-0 / ADR-0003
   ratification (documentation-only revision; no numerical facts superseded;
