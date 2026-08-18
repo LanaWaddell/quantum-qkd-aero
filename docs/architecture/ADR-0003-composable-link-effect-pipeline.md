@@ -22,6 +22,7 @@ git history confirms this file's first commit is the ratification commit):
   remain deferred to LINK-1 by design, now with literature evidence
   recorded for their discharge.
 - 2026-07-17 — **RATIFIED** by Lana (PI). Body text unchanged.
+- 2026-08-18 — **PI clarification for LINK-6b (Lana):** §3.6 item 1's statement that composed `timing_jitter_s` "bounds how tight Δt can go" is illustrative motivation, not a mandate to manufacture an arbitrary hard lower bound. Under LINK-6b's centered-Gaussian timing model, timing coupling is implemented by the declared gate-acceptance response/cost law and the adjacent-gate model-validity guard (`docs/LINK_6B_PLAN.md` §1.1, §2.1). `ControlSpec.feasible` remains reserved for genuine hardware-feasibility intervals. Control declaration, bounds, auditability, and replay requirements remain binding; the ADR decision body is otherwise unchanged.
 **Date:** 2026-07-05 (frozen) / 2026-07-17 (ratified)
 **Deciders:** Lana (PI); reviewed by Echo (systems, two rounds), Claude (physics/architecture)
 **Extends:** ADR-0002 (three-axis medium/topology/protocol model). Does **not** alter

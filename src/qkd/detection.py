@@ -44,6 +44,11 @@ PDT_BLOCK_RATIO = 50
 PDT_GRID_UNIFORMITY_REL_TOL = 1e-9
 PDT_BLOCK_BINDING_REL_TOL = 1e-6
 
+# LINK-6b (docs/LINK_6B_PLAN.md §2, §1.1) -- new declared controls/tolerance.
+MIN_FILTER_SIGMA_HZ = 1e3
+MAX_FILTER_SIGMA_HZ = 1e15
+JITTER_LEAK_TOLERANCE = 1e-9
+
 
 # ---------------------------------------------------------------------------
 # Exceptions (fail-loud boundaries, named per plan §8/§4/§5/§3.1)
@@ -63,7 +68,17 @@ class ReceiverEveNotSupportedError(DetectionError):
 
 
 class GateWindowRequiredError(DetectionError):
-    """Raised when a non-identity rate observable is consumed without ``gate_window_s`` (§2)."""
+    """Raised when a non-identity rate/jitter observable is consumed without
+    ``gate_window_s`` (plan §2 -- extended by LINK-6b to ``timing_jitter_s``)."""
+
+
+class FilterControlRequiredError(DetectionError):
+    """Raised when ``filter_sigma_hz``/``doppler_residual_fraction`` is required but
+    absent (LINK-6b plan §1.2/§2 -- "no silent default")."""
+
+
+class GateLeakageGuardError(DetectionError):
+    """Raised when the adjacent-gate leakage guard is violated (LINK-6b plan §1.1)."""
 
 
 class AfterpulseCascadeDomainError(DetectionError):
@@ -134,9 +149,13 @@ PDT_ADMISSIBLE_EFFECTS: dict[str, str] = {
     "detector_dead_time": "deterministic",
     "background_light": "deterministic",
     "detector_dark_rate": "deterministic",
+    "timing_jitter": "deterministic",
+    "polarization_misalignment": "deterministic",
+    "phase_misalignment": "deterministic",
     "scintillation_fading": "law",
 }
-"""Frozen mapping ``effect_id -> {"deterministic", "law"}`` (plan §5, table).
+"""Frozen mapping ``effect_id -> {"deterministic", "law"}`` (LINK-6a plan §5,
+table; extended by LINK-6b plan §4 with the three new deterministic owners).
 
 Membership -- not type inspection -- decides PDT admissibility (no attempt
 to infer whether an arbitrary effect is stochastic). ``pointing_jitter``,
@@ -159,10 +178,16 @@ class ReceiverModel:
     :data:`PI_SUM_TOLERANCE`. ``operating_convention`` names the §1.4
     calibrated-pair convention; the only value LINK-6a defines is
     ``"next_live_gate_v1"``.
+
+    ``source_linewidth_sigma_hz`` (LINK-6b plan §1.2, PI decision §11-2) is a
+    **receiver-assumed** source parameter, default ``0.0``, validated finite
+    and ``>= 0`` -- a placeholder home until the source partition's own
+    consumption PR makes a ``SourceObservables`` field the right owner.
     """
 
     pi: tuple[float, float, float]
     operating_convention: str = "next_live_gate_v1"
+    source_linewidth_sigma_hz: float = 0.0
 
     def __post_init__(self) -> None:
         if len(self.pi) != 3:
@@ -189,6 +214,11 @@ class ReceiverModel:
                 "operating_convention must be 'next_live_gate_v1'; got "
                 f"{self.operating_convention!r}."
             )
+        if not math.isfinite(self.source_linewidth_sigma_hz) or self.source_linewidth_sigma_hz < 0.0:
+            raise ReceiverConfigError(
+                "source_linewidth_sigma_hz must be finite and >= 0; got "
+                f"{self.source_linewidth_sigma_hz!r}."
+            )
 
     @property
     def pi_signal(self) -> float:
@@ -203,7 +233,9 @@ class ReceiverModel:
         return self.pi[2]
 
     def controls(self, pulse_repetition_rate_hz: float) -> tuple[ControlSpec, ...]:
-        """Declare ``gate_window_s`` (plan §2) -- a period-coupled bound.
+        """Declare ``gate_window_s``, ``filter_sigma_hz``, ``doppler_residual_fraction``
+        (LINK-6a plan §2; extended by LINK-6b plan §2) -- ``gate_window_s`` is a
+        period-coupled bound.
 
         Unlike :class:`qkd.link.Controllable` (a zero-argument protocol used
         by :class:`qkd.link.ChannelStack` for its own effects), the
@@ -221,7 +253,25 @@ class ReceiverModel:
                 unit="s",
                 bounds=(MIN_GATE_WINDOW_S, upper),
                 description=(
-                    "Detector coincidence/acceptance gate window (LINK-6a plan §2)."
+                    "Detector coincidence/acceptance gate window (LINK-6a plan §2; "
+                    "also required-when-consumed for timing_jitter_s, LINK-6b plan §2)."
+                ),
+            ),
+            ControlSpec(
+                name="filter_sigma_hz",
+                unit="Hz",
+                bounds=(MIN_FILTER_SIGMA_HZ, MAX_FILTER_SIGMA_HZ),
+                description=(
+                    "Receiver spectral-filter rms passband width (LINK-6b plan §1.2, §2)."
+                ),
+            ),
+            ControlSpec(
+                name="doppler_residual_fraction",
+                unit="",
+                bounds=(0.0, 1.0),
+                description=(
+                    "Declared residual Doppler fraction after compensation "
+                    "(LINK-6b plan §1.2, §2)."
                 ),
             ),
         )
@@ -234,18 +284,27 @@ class ReceiverModel:
 
 @dataclass(frozen=True)
 class ReceiverInputs:
-    """The exact per-sample consumed-field set (plan §3): four detector-side observables."""
+    """The exact per-sample consumed-field set (LINK-6a plan §3, extended by
+    LINK-6b plan §3): seven observables -- four detector-side (LINK-6a) plus
+    three channel-side (LINK-6b), the latter **trailing with identity
+    default 0.0** (LINK-6b plan §3, B4) so every existing four-positional
+    construction remains valid and honest without edits.
+    """
 
     background_rate_hz: float
     dark_count_rate_hz: float
     afterpulse_prob: float
     dead_time_s: float
+    timing_jitter_s: float = 0.0
+    frequency_offset_hz: float = 0.0
+    misalignment_error: float = 0.0
 
 
 def extract_receiver_inputs(
     state: EffectiveLinkState,
 ) -> tuple[ReceiverInputs, EffectiveLinkState]:
-    """Split ``state`` into the receiver-consumed fields and the residual (plan §3).
+    """Split ``state`` into the receiver-consumed fields and the residual
+    (LINK-6a plan §3, extended by LINK-6b plan §3).
 
     The residual retains every other field of ``state`` unchanged (including
     ``source`` and the channel/detector fields the receiver does not
@@ -259,9 +318,18 @@ def extract_receiver_inputs(
         dark_count_rate_hz=state.detector.dark_count_rate_hz,
         afterpulse_prob=state.detector.afterpulse_prob,
         dead_time_s=state.detector.dead_time_s,
+        timing_jitter_s=state.channel.timing_jitter_s,
+        frequency_offset_hz=state.channel.frequency_offset_hz,
+        misalignment_error=state.channel.misalignment_error,
     )
     residual = EffectiveLinkState(
-        channel=replace(state.channel, background_rate_hz=0.0),
+        channel=replace(
+            state.channel,
+            background_rate_hz=0.0,
+            timing_jitter_s=0.0,
+            frequency_offset_hz=0.0,
+            misalignment_error=0.0,
+        ),
         detector=replace(
             state.detector,
             dark_count_rate_hz=0.0,
@@ -298,6 +366,9 @@ class ReceiverBlockResult:
     a: float
     q_bar_reg: float
     r_click_hz: float
+    eta_gate: float
+    eta_filter: float
+    e_d_eff: float
 
 
 # ---------------------------------------------------------------------------
@@ -340,6 +411,162 @@ def compute_noise_probabilities(
     else:
         p_noise = 1.0 - (1.0 - y0) * (1.0 - p_bg) * (1.0 - p_dk)
     return p_bg, p_dk, p_noise
+
+
+# ---------------------------------------------------------------------------
+# LINK-6b §1.1/§1.2/§1.3 -- channel-copy folds (gate/filter acceptance,
+# intrinsic-error mapping). Computed once per sample, before the base-
+# statistics call (plan §1 intro): "gate acceptance and filter acceptance
+# are signal-only multipliers of the optical transmittance ... they never
+# touch p_bg/p_dk/p_noise/y0".
+# ---------------------------------------------------------------------------
+
+
+def compute_gate_acceptance(
+    *,
+    timing_jitter_s: float,
+    gate_window_s: float | None,
+    pulse_repetition_rate_hz: float,
+) -> float:
+    """``eta_gate`` per plan §1.1: ``erf(Delta_t / (2 sqrt(2) sigma_t))``.
+
+    Exact identity short-circuit: ``eta_gate == 1.0`` when ``sigma_t == 0``
+    (parity anchor) -- ``gate_window_s`` is not required in that case.
+    Otherwise ``gate_window_s`` is required (plan §2, extends
+    :class:`GateWindowRequiredError` to ``timing_jitter_s``) and the
+    adjacent-gate leakage guard (plan §1.1) is enforced:
+    ``P(|tau| > 1/f_rep - Delta_t/2) <= JITTER_LEAK_TOLERANCE``, else
+    :class:`GateLeakageGuardError`.
+    """
+
+    if timing_jitter_s == 0.0:
+        return 1.0
+    if gate_window_s is None:
+        raise GateWindowRequiredError(
+            "gate_window_s is required whenever the receiver path consumes a "
+            "non-identity timing_jitter_s (plan §2); supply it via link_controls."
+        )
+    sigma_t = timing_jitter_s
+    delta_t = gate_window_s
+    eta_gate = math.erf(delta_t / (2.0 * math.sqrt(2.0) * sigma_t))
+
+    period_s = 1.0 / pulse_repetition_rate_hz
+    threshold = period_s - delta_t / 2.0
+    leak_mass = math.erfc(threshold / (math.sqrt(2.0) * sigma_t))
+    if leak_mass > JITTER_LEAK_TOLERANCE:
+        raise GateLeakageGuardError(
+            f"Adjacent-gate leakage mass P(|tau| > 1/f_rep - Delta_t/2) = "
+            f"{leak_mass!r} exceeds JITTER_LEAK_TOLERANCE={JITTER_LEAK_TOLERANCE} "
+            "(plan §1.1)."
+        )
+    return eta_gate
+
+
+def compute_filter_acceptance(
+    *,
+    frequency_offset_hz: float,
+    filter_sigma_hz: float | None,
+    doppler_residual_fraction: float | None,
+    source_linewidth_sigma_hz: float,
+) -> float:
+    """``eta_filter`` per plan §1.2 -- the five-branch activation rule (B2).
+
+    (i) ``filter_sigma_hz`` required when ``frequency_offset_hz != 0`` or
+    ``source_linewidth_sigma_hz > 0``; (ii) ``doppler_residual_fraction``
+    required only when ``frequency_offset_hz != 0``; (iii) exact ``1.0``
+    short-circuit when ``frequency_offset_hz == 0``, ``source_linewidth_
+    sigma_hz == 0``, and no filter is supplied; (iv) a supplied filter with
+    ``frequency_offset_hz == 0`` still computes the finite-linewidth
+    prefactor; (v) an unused ``doppler_residual_fraction`` is
+    accepted-but-unused (defaults to 0 in the formula, contributing nothing
+    when ``frequency_offset_hz == 0``).
+    """
+
+    filter_required = frequency_offset_hz != 0.0 or source_linewidth_sigma_hz > 0.0
+    if filter_required and filter_sigma_hz is None:
+        raise FilterControlRequiredError(
+            "filter_sigma_hz is required whenever the receiver path consumes a "
+            "non-identity frequency_offset_hz or a nonzero "
+            "source_linewidth_sigma_hz (plan §1.2, §2); supply it via link_controls."
+        )
+    if frequency_offset_hz != 0.0 and doppler_residual_fraction is None:
+        raise FilterControlRequiredError(
+            "doppler_residual_fraction is required whenever the receiver path "
+            "consumes a non-identity frequency_offset_hz (plan §1.2, §2); "
+            "supply it via link_controls."
+        )
+
+    if filter_sigma_hz is None:
+        # frequency_offset_hz == 0 and source_linewidth_sigma_hz == 0 (else
+        # the FilterControlRequiredError above would have fired) -- exact
+        # parity anchor (plan §1.2, branch iii).
+        return 1.0
+
+    r = doppler_residual_fraction if doppler_residual_fraction is not None else 0.0
+    delta_nu_res = r * frequency_offset_hz
+    sigma_f = filter_sigma_hz
+    sigma_s = source_linewidth_sigma_hz
+    denominator = sigma_f * sigma_f + sigma_s * sigma_s
+    prefactor = sigma_f / math.sqrt(denominator)
+    return prefactor * math.exp(-(delta_nu_res * delta_nu_res) / (2.0 * denominator))
+
+
+def compute_intrinsic_error_mapping(intrinsic_qber: float, misalignment_error: float) -> float:
+    """``e_d'`` per plan §1.3: XOR composition of two independent error probabilities.
+
+    ``e_d' == e_d`` exactly when ``misalignment_error == 0`` (parity anchor
+    -- holds structurally for the formula below, no special-casing needed).
+    Domain enforcement (``e_d' <= 0.5``) is intentionally left to
+    ``bb84.py``'s own ``intrinsic_qber`` check, reached unmodified on the
+    folded channel copy (plan §1.3) -- not pre-empted here.
+    """
+
+    e_d = intrinsic_qber
+    m = misalignment_error
+    return e_d + m - 2.0 * e_d * m
+
+
+def apply_link6b_channel_fold(
+    channel: ChannelState,
+    *,
+    receiver_inputs: ReceiverInputs,
+    gate_window_s: float | None,
+    pulse_repetition_rate_hz: float,
+    filter_sigma_hz: float | None,
+    doppler_residual_fraction: float | None,
+    source_linewidth_sigma_hz: float,
+) -> tuple[ChannelState, float, float, float]:
+    """Compute the three LINK-6b mappings and fold them into a channel copy (plan §1).
+
+    Returns ``(channel_eff, eta_gate, eta_filter, e_d_eff)``. ``eta_gate *
+    eta_filter`` multiplies ``channel.transmittance`` (signal-only, applied
+    **before** the base-statistics call); ``e_d_eff`` replaces
+    ``channel.intrinsic_qber``. Exact pass-through when all three LINK-6b
+    inputs are identity (``eta_gate == eta_filter == 1.0``, ``e_d_eff ==
+    channel.intrinsic_qber``) -- LINK-6a's strict-``==`` identity-receiver
+    parity tests are unaffected.
+    """
+
+    eta_gate = compute_gate_acceptance(
+        timing_jitter_s=receiver_inputs.timing_jitter_s,
+        gate_window_s=gate_window_s,
+        pulse_repetition_rate_hz=pulse_repetition_rate_hz,
+    )
+    eta_filter = compute_filter_acceptance(
+        frequency_offset_hz=receiver_inputs.frequency_offset_hz,
+        filter_sigma_hz=filter_sigma_hz,
+        doppler_residual_fraction=doppler_residual_fraction,
+        source_linewidth_sigma_hz=source_linewidth_sigma_hz,
+    )
+    e_d_eff = compute_intrinsic_error_mapping(
+        channel.intrinsic_qber, receiver_inputs.misalignment_error
+    )
+    channel_eff = replace(
+        channel,
+        transmittance=channel.transmittance * eta_gate * eta_filter,
+        intrinsic_qber=e_d_eff,
+    )
+    return channel_eff, eta_gate, eta_filter, e_d_eff
 
 
 # ---------------------------------------------------------------------------
@@ -427,8 +654,16 @@ def compute_receiver_block(
     gate_window_s: float | None,
     pulse_repetition_rate_hz: float,
     q: float = 0.5,
+    filter_sigma_hz: float | None = None,
+    doppler_residual_fraction: float | None = None,
+    source_linewidth_sigma_hz: float = 0.0,
 ) -> ReceiverBlockResult:
-    """The complete §1 receiver chain for one sampled block (base-statistics reuse route, C3)."""
+    """The complete §1 receiver chain for one sampled block (base-statistics reuse route, C3).
+
+    LINK-6b (plan §1, §3): the gate/filter/misalignment channel-copy fold is
+    applied **before** the base-statistics call, so ``p_bg``/``p_dk``/
+    ``p_noise`` and the base ``Q_vacuum`` are unaffected (signal-only fold).
+    """
 
     y0 = detector.dark_count_prob
     p_bg, p_dk, p_noise = compute_noise_probabilities(
@@ -438,7 +673,16 @@ def compute_receiver_block(
         gate_window_s=gate_window_s,
     )
     detector_eff = replace(detector, dark_count_prob=p_noise)
-    base = run_decoy_bb84(channel, intensities, n_pulses, detector_eff, eve=None, q=q)
+    channel_eff, eta_gate, eta_filter, e_d_eff = apply_link6b_channel_fold(
+        channel,
+        receiver_inputs=receiver_inputs,
+        gate_window_s=gate_window_s,
+        pulse_repetition_rate_hz=pulse_repetition_rate_hz,
+        filter_sigma_hz=filter_sigma_hz,
+        doppler_residual_fraction=doppler_residual_fraction,
+        source_linewidth_sigma_hz=source_linewidth_sigma_hz,
+    )
+    base = run_decoy_bb84(channel_eff, intensities, n_pulses, detector_eff, eve=None, q=q)
 
     q_prime, e_prime, _t_prime, a, _q_bar, q_bar_reg = shared_history_afterpulse(
         base.gains, base.qber_per_intensity, pi, receiver_inputs.afterpulse_prob
@@ -462,6 +706,9 @@ def compute_receiver_block(
         a=a,
         q_bar_reg=q_bar_reg,
         r_click_hz=r_click,
+        eta_gate=eta_gate,
+        eta_filter=eta_filter,
+        e_d_eff=e_d_eff,
     )
 
 
@@ -481,6 +728,9 @@ def _finish_receiver_block(
     a: float,
     q_bar_reg: float,
     r_click_hz: float,
+    eta_gate: float = 1.0,
+    eta_filter: float = 1.0,
+    e_d_eff: float = 0.0,
 ) -> ReceiverBlockResult:
     """Shared estimator-call tail for both sampled and PDT block results (plan §1.2/§1.5, §5)."""
 
@@ -521,6 +771,9 @@ def _finish_receiver_block(
         a=a,
         q_bar_reg=q_bar_reg,
         r_click_hz=r_click_hz,
+        eta_gate=eta_gate,
+        eta_filter=eta_filter,
+        e_d_eff=e_d_eff,
     )
 
 
@@ -736,20 +989,21 @@ def compute_receiver_block_pdt(
     pulse_repetition_rate_hz: float,
     q: float = 0.5,
     n_nodes: int = 21,
+    filter_sigma_hz: float | None = None,
+    doppler_residual_fraction: float | None = None,
+    source_linewidth_sigma_hz: float = 0.0,
 ) -> ReceiverBlockResult:
     """The five-step deterministic-prefix PDT block (plan §5, C2).
 
     ``channel_base.transmittance`` is ``eta_base(t_k)`` -- the deterministic
     prefix-stack transmittance at this sample, already folded through
-    ``qkd.link.apply_link_state``. Each Gauss-Hermite node forms the
-    physical node state ``eta_base * f_i`` (never calling the law effect's
-    ``evaluate``), and the estimator consumes the availability-weighted
-    observed-statistics ratios (plan §5 ratios block).
+    ``qkd.link.apply_link_state``. LINK-6b (plan §1, §3): the gate/filter
+    multipliers are ``f``-independent, so they are applied **once to
+    eta_base before the node loop**; each Gauss-Hermite node then forms the
+    physical node state ``eta_base_folded * f_i`` (never calling the law
+    effect's ``evaluate``), and the estimator consumes the
+    availability-weighted observed-statistics ratios (plan §5 ratios block).
     """
-
-    eta_base = channel_base.transmittance
-    f_nodes, p_nodes = gauss_hermite_lognormal_nodes(law, n_nodes)
-    validate_tail_and_nodes(law, eta_base, f_nodes)
 
     y0 = detector.dark_count_prob
     p_bg, p_dk, p_noise = compute_noise_probabilities(
@@ -759,6 +1013,19 @@ def compute_receiver_block_pdt(
         gate_window_s=gate_window_s,
     )
     detector_eff = replace(detector, dark_count_prob=p_noise)
+    channel_base_eff, eta_gate, eta_filter, e_d_eff = apply_link6b_channel_fold(
+        channel_base,
+        receiver_inputs=receiver_inputs,
+        gate_window_s=gate_window_s,
+        pulse_repetition_rate_hz=pulse_repetition_rate_hz,
+        filter_sigma_hz=filter_sigma_hz,
+        doppler_residual_fraction=doppler_residual_fraction,
+        source_linewidth_sigma_hz=source_linewidth_sigma_hz,
+    )
+
+    eta_base = channel_base_eff.transmittance
+    f_nodes, p_nodes = gauss_hermite_lognormal_nodes(law, n_nodes)
+    validate_tail_and_nodes(law, eta_base, f_nodes)
 
     sum_p_availability = 0.0
     sum_weighted_q = {name: 0.0 for name in _INTENSITY_NAMES}
@@ -770,7 +1037,7 @@ def compute_receiver_block_pdt(
     for f_i, p_i in zip(f_nodes, p_nodes):
         p_i = float(p_i)
         eta_node = eta_base * float(f_i)
-        node_channel = replace(channel_base, transmittance=eta_node)
+        node_channel = replace(channel_base_eff, transmittance=eta_node)
         base = run_decoy_bb84(node_channel, intensities, n_pulses, detector_eff, eve=None, q=q)
         q_prime, e_prime, t_prime, a_i, _q_bar_i, q_bar_reg_i = shared_history_afterpulse(
             base.gains, base.qber_per_intensity, pi, receiver_inputs.afterpulse_prob
@@ -809,4 +1076,7 @@ def compute_receiver_block_pdt(
         a=sum_p_a,
         q_bar_reg=sum_p_q_bar_reg,
         r_click_hz=sum_p_r_click,
+        eta_gate=eta_gate,
+        eta_filter=eta_filter,
+        e_d_eff=e_d_eff,
     )

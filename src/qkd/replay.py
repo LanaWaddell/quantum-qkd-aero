@@ -26,17 +26,29 @@ from qkd.effects import (
     DopplerShiftEffect,
     GeometricLossEffect,
     MuFluctuationEffect,
+    PhaseMisalignmentEffect,
     PointingJitterEffect,
     PointingLossEffect,
+    PolarizationMisalignmentEffect,
     ScintillationFadingEffect,
     SystemEfficiencyEffect,
+    TimingJitterEffect,
 )
 from qkd.link import ChannelEffect
 from qkd.signals import DetectorParams
 
 
-LINK_PIPELINE_VERSION = "link-6a.1"
+LINK_PIPELINE_VERSION = "link-6b.1"
+LINK_PIPELINE_VERSION_V1 = "link-6a.1"
+"""The historical LINK-6a pipeline-version string (LINK-6b plan §5, B3
+compatibility matrix) -- required exactly on ``manifest_version == 1``
+manifests; ``LINK_PIPELINE_VERSION`` (above) is required exactly on
+``manifest_version == 2``.
+"""
+
 RESULTS_SCHEMA_VERSION = "2.0"
+CURRENT_MANIFEST_VERSION = 2
+SUPPORTED_MANIFEST_VERSIONS = frozenset({1, 2})
 
 PRODUCTION_EFFECT_IDS = (
     "system_efficiency",
@@ -107,6 +119,9 @@ _EFFECT_REGISTRY: tuple[tuple[str, type, tuple[str, ...]], ...] = (
     ("detector_dead_time", DetectorDeadTimeEffect, ("dead_time_s",)),
     ("background_light", BackgroundLightEffect, ("background_rate_hz",)),
     ("detector_dark_rate", DetectorDarkRateEffect, ("dark_count_rate_hz",)),
+    ("timing_jitter", TimingJitterEffect, ("jitter_sigma_s",)),
+    ("polarization_misalignment", PolarizationMisalignmentEffect, ("error_prob",)),
+    ("phase_misalignment", PhaseMisalignmentEffect, ("delta_phi_rad",)),
 )
 
 EFFECT_CODECS: dict[str, EffectCodec] = {
@@ -240,7 +255,7 @@ def build_manifest(
     }
 
     manifest: dict[str, object] = {
-        "manifest_version": 1,
+        "manifest_version": CURRENT_MANIFEST_VERSION,
         "replayability": "replayable" if replayable else "configuration_auditable",
         "mission_config": mission_config_obj,
         "production_effects": list(PRODUCTION_EFFECT_IDS),
@@ -264,6 +279,7 @@ def build_manifest(
                 "vacuum": receiver.pi[2],
             },
             "operating_convention": receiver.operating_convention,
+            "source_linewidth_sigma_hz": receiver.source_linewidth_sigma_hz,
         }
     if link_mode == "pdt":
         manifest["pdt_config"] = {
@@ -310,8 +326,18 @@ _DETECTOR_KEYS = frozenset(
 )
 _INTENSITY_KEYS = frozenset({"signal", "decoy", "vacuum"})
 _SKY_CONDITIONS = frozenset({"night", "twilight", "day"})
-_RECEIVER_KEYS = frozenset({"pi", "operating_convention"})
+_RECEIVER_KEYS_V1 = frozenset({"pi", "operating_convention"})
+_RECEIVER_KEYS_V2 = frozenset({"pi", "operating_convention", "source_linewidth_sigma_hz"})
 _PI_KEYS = frozenset({"signal", "decoy", "vacuum"})
+_V1_REJECTED_EFFECT_IDS = frozenset(
+    {"timing_jitter", "polarization_misalignment", "phase_misalignment"}
+)
+"""LINK-6b effect ids that are rejected in a ``manifest_version == 1`` manifest
+(plan §5, B3 compatibility matrix)."""
+
+_V1_REJECTED_CONTROL_NAMES = frozenset({"filter_sigma_hz", "doppler_residual_fraction"})
+"""LINK-6b control names that are rejected in a ``manifest_version == 1`` manifest
+(plan §5, B3 compatibility matrix)."""
 _PDT_CONFIG_KEYS = frozenset(
     {"fading_coherence_time_s", "block_duration_s", "tau_mem_s", "order"}
 )
@@ -399,9 +425,11 @@ def validate_manifest_object(manifest: Mapping[str, object]) -> None:
     if missing:
         raise ManifestValidationError(f"Manifest is missing required key(s): {sorted(missing)}.")
 
-    if manifest["manifest_version"] != 1:
+    manifest_version = manifest["manifest_version"]
+    if manifest_version not in SUPPORTED_MANIFEST_VERSIONS:
         raise ManifestValidationError(
-            f"manifest_version must be 1; got {manifest['manifest_version']!r}."
+            f"manifest_version must be one of {sorted(SUPPORTED_MANIFEST_VERSIONS)}; "
+            f"got {manifest_version!r}."
         )
     replayability = _require_str(manifest["replayability"], "replayability")
     _require_member(replayability, _REPLAYABILITY_VALUES, "replayability")
@@ -458,6 +486,11 @@ def validate_manifest_object(manifest: Mapping[str, object]) -> None:
         codec = EFFECT_CODECS.get(effect_id)
         if codec is not None and spec_map["type_id"] == codec.type_id:
             _require_exact_keys(params, frozenset(codec.param_keys), f"{path}.params")
+        if manifest_version == 1 and effect_id in _V1_REJECTED_EFFECT_IDS:
+            raise ManifestValidationError(
+                f"{path}.effect_id={effect_id!r} is a LINK-6b effect id; not "
+                "permitted in a manifest_version=1 manifest (plan §5, B3)."
+            )
 
     all_registered = all(
         (codec := EFFECT_CODECS.get(spec["effect_id"])) is not None
@@ -479,13 +512,19 @@ def validate_manifest_object(manifest: Mapping[str, object]) -> None:
     link_controls = _require_mapping(manifest["link_controls"], "link_controls")
     for key, value in link_controls.items():
         _require_finite_number(value, f"link_controls.{key}")
+        if manifest_version == 1 and key in _V1_REJECTED_CONTROL_NAMES:
+            raise ManifestValidationError(
+                f"link_controls contains {key!r}, a LINK-6b control name; not "
+                "permitted in a manifest_version=1 manifest (plan §5, B3)."
+            )
 
     mode = _require_str(manifest["mode"], "mode")
     _require_member(mode, _MODE_VALUES, "mode")
 
     if "receiver" in manifest:
         receiver = _require_mapping(manifest["receiver"], "receiver")
-        _require_exact_keys(receiver, _RECEIVER_KEYS, "receiver")
+        receiver_keys = _RECEIVER_KEYS_V1 if manifest_version == 1 else _RECEIVER_KEYS_V2
+        _require_exact_keys(receiver, receiver_keys, "receiver")
         pi = _require_mapping(receiver["pi"], "receiver.pi")
         _require_exact_keys(pi, _PI_KEYS, "receiver.pi")
         total = 0.0
@@ -506,6 +545,15 @@ def validate_manifest_object(manifest: Mapping[str, object]) -> None:
         _require_member(
             operating_convention, frozenset({"next_live_gate_v1"}), "receiver.operating_convention"
         )
+        if manifest_version == 2:
+            source_linewidth_sigma_hz = _require_finite_number(
+                receiver["source_linewidth_sigma_hz"], "receiver.source_linewidth_sigma_hz"
+            )
+            if source_linewidth_sigma_hz < 0.0:
+                raise ManifestValidationError(
+                    "receiver.source_linewidth_sigma_hz must be >= 0; got "
+                    f"{source_linewidth_sigma_hz!r}."
+                )
 
     if mode == "pdt":
         if "pdt_config" not in manifest:
@@ -539,7 +587,16 @@ def validate_manifest_object(manifest: Mapping[str, object]) -> None:
     if (mode == "pdt") != (pdt_model_id is not None):
         raise ManifestValidationError("model_ids.pdt must be non-null iff mode == 'pdt'.")
 
-    _require_str(manifest["pipeline_version"], "pipeline_version")
+    pipeline_version = _require_str(manifest["pipeline_version"], "pipeline_version")
+    expected_pipeline_version = (
+        LINK_PIPELINE_VERSION_V1 if manifest_version == 1 else LINK_PIPELINE_VERSION
+    )
+    if pipeline_version != expected_pipeline_version:
+        raise ManifestValidationError(
+            f"pipeline_version must be {expected_pipeline_version!r} for "
+            f"manifest_version={manifest_version!r}; got {pipeline_version!r} "
+            "(plan §5, B3 compatibility matrix)."
+        )
     _require_str(manifest["schema_version"], "schema_version")
 
     serialization = _require_mapping(manifest["serialization"], "serialization")
@@ -619,9 +676,19 @@ def replay_from_provenance(manifest_json: str):
     if "receiver" in manifest:
         receiver_obj = manifest["receiver"]
         pi_obj = receiver_obj["pi"]
+        # A v1 manifest never carries source_linewidth_sigma_hz -- the
+        # reader supplies the identity default 0.0 (plan §5: "a v1 manifest
+        # replays with source_linewidth_sigma_hz = 0.0 supplied by the
+        # reader").
+        source_linewidth_sigma_hz = (
+            0.0
+            if manifest["manifest_version"] == 1
+            else receiver_obj["source_linewidth_sigma_hz"]
+        )
         receiver = ReceiverModel(
             pi=(pi_obj["signal"], pi_obj["decoy"], pi_obj["vacuum"]),
             operating_convention=receiver_obj["operating_convention"],
+            source_linewidth_sigma_hz=source_linewidth_sigma_hz,
         )
 
     pdt_config = None

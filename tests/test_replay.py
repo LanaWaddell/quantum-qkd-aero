@@ -33,6 +33,7 @@ from qkd.mission import MissionConfig, simulate_pass
 from qkd.replay import (
     EFFECT_CODECS,
     LINK_PIPELINE_VERSION,
+    LINK_PIPELINE_VERSION_V1,
     ManifestValidationError,
     PRODUCTION_EFFECT_IDS,
     ReplayRefusedError,
@@ -44,8 +45,10 @@ from qkd.replay import (
 
 
 def _valid_manifest_dict() -> dict:
+    """A valid **v2** (LINK-6b) manifest (§7: superseded from v1 by this PR)."""
+
     return {
-        "manifest_version": 1,
+        "manifest_version": 2,
         "replayability": "replayable",
         "mission_config": {
             "samples": 10,
@@ -89,6 +92,16 @@ def _valid_manifest_dict() -> dict:
     }
 
 
+def _valid_manifest_v1_dict() -> dict:
+    """The exact historical **v1** (LINK-6a) manifest form (§7, B4) -- for the
+    v1/v2 compatibility-matrix tests (LINK-6b plan §5, B3)."""
+
+    manifest = _valid_manifest_dict()
+    manifest["manifest_version"] = 1
+    manifest["pipeline_version"] = LINK_PIPELINE_VERSION_V1
+    return manifest
+
+
 def _canonical(obj) -> str:
     return json.dumps(obj, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
 
@@ -98,7 +111,7 @@ def _canonical(obj) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_effect_codecs_cover_exactly_the_thirteen_registered_effect_ids():
+def test_effect_codecs_cover_exactly_the_sixteen_registered_effect_ids():
     assert set(EFFECT_CODECS) == {
         "system_efficiency",
         "atmospheric_absorption",
@@ -113,6 +126,9 @@ def test_effect_codecs_cover_exactly_the_thirteen_registered_effect_ids():
         "detector_dead_time",
         "background_light",
         "detector_dark_rate",
+        "timing_jitter",
+        "polarization_misalignment",
+        "phase_misalignment",
     }
 
 
@@ -141,7 +157,8 @@ def test_production_effects_order_is_pinned():
 
 
 def test_link_pipeline_version_constant_has_the_plan_frozen_value():
-    assert LINK_PIPELINE_VERSION == "link-6a.1"
+    assert LINK_PIPELINE_VERSION == "link-6b.1"
+    assert LINK_PIPELINE_VERSION_V1 == "link-6a.1"
 
 
 def test_valid_manifest_round_trips_through_validation():
@@ -194,8 +211,26 @@ def test_sky_condition_outside_enum_rejected():
 
 
 def test_unknown_key_inside_receiver_rejected():
+    # v2 receiver gains source_linewidth_sigma_hz (LINK-6b plan §5).
     manifest = _valid_manifest_dict()
-    manifest["receiver"] = {"pi": {"signal": 0.8, "decoy": 0.15, "vacuum": 0.05}, "operating_convention": "next_live_gate_v1"}
+    manifest["receiver"] = {
+        "pi": {"signal": 0.8, "decoy": 0.15, "vacuum": 0.05},
+        "operating_convention": "next_live_gate_v1",
+        "source_linewidth_sigma_hz": 0.0,
+    }
+    manifest["model_ids"]["receiver"] = "qkd_receiver_mean_field_v1"
+    manifest["receiver"]["extra"] = 1
+    with pytest.raises(ManifestValidationError):
+        validate_manifest_object(manifest)
+
+
+def test_unknown_key_inside_receiver_rejected_v1():
+    # v1-manifest variant (LINK-6b plan §7).
+    manifest = _valid_manifest_v1_dict()
+    manifest["receiver"] = {
+        "pi": {"signal": 0.8, "decoy": 0.15, "vacuum": 0.05},
+        "operating_convention": "next_live_gate_v1",
+    }
     manifest["model_ids"]["receiver"] = "qkd_receiver_mean_field_v1"
     manifest["receiver"]["extra"] = 1
     with pytest.raises(ManifestValidationError):
@@ -206,6 +241,20 @@ def test_receiver_object_containing_calibrated_pair_fields_rejected():
     # F2: the calibrated (p_ap, dead_time_s) pair is not duplicated in
     # 'receiver' -- single ownership stays with the ordered effect specs.
     manifest = _valid_manifest_dict()
+    manifest["receiver"] = {
+        "pi": {"signal": 0.8, "decoy": 0.15, "vacuum": 0.05},
+        "operating_convention": "next_live_gate_v1",
+        "source_linewidth_sigma_hz": 0.0,
+        "afterpulse_prob": 0.02,
+    }
+    manifest["model_ids"]["receiver"] = "qkd_receiver_mean_field_v1"
+    with pytest.raises(ManifestValidationError):
+        validate_manifest_object(manifest)
+
+
+def test_receiver_object_containing_calibrated_pair_fields_rejected_v1():
+    # v1-manifest variant (LINK-6b plan §7).
+    manifest = _valid_manifest_v1_dict()
     manifest["receiver"] = {
         "pi": {"signal": 0.8, "decoy": 0.15, "vacuum": 0.05},
         "operating_convention": "next_live_gate_v1",
@@ -271,7 +320,7 @@ def test_canonical_json_reserialization_mismatch_rejected():
     manifest_json = _canonical(manifest)
     # A byte that makes the parsed form re-serialize differently: extra
     # whitespace (still valid JSON, but not canonical form).
-    tampered = manifest_json.replace('"manifest_version":1', '"manifest_version": 1')
+    tampered = manifest_json.replace('"manifest_version":2', '"manifest_version": 2')
     with pytest.raises(ManifestValidationError):
         _validate_manifest_json(tampered)
 
@@ -284,8 +333,10 @@ def test_link_seed_non_int_rejected():
 
 
 def test_manifest_version_unsupported_rejected():
+    # 1 and 2 are both supported (LINK-6b plan §5, B3); use a genuinely
+    # unsupported version.
     manifest = _valid_manifest_dict()
-    manifest["manifest_version"] = 2
+    manifest["manifest_version"] = 3
     with pytest.raises(ManifestValidationError):
         validate_manifest_object(manifest)
 

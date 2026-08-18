@@ -220,26 +220,15 @@ def test_duplicate_control_name_across_stack_and_receiver_rejected():
 
 # ---------------------------------------------------------------------------
 # §3 -- exact consumed-field set; 6b/source fields still rejected
+#
+# LINK-6b plan §7: frequency_offset_hz is now consumed (§1.2) --
+# test_frequency_offset_still_rejected_in_receiver_active_mode is deleted,
+# not replaced (test_intensity_factor_still_rejected_in_receiver_active_mode
+# below already proves the one remaining rejected field, intensity_factor;
+# LINK-6b plan §7, "no duplicate residual-bridge test"). See
+# tests/test_link6b.py for frequency_offset_hz/timing_jitter_s/
+# misalignment_error consumption tests.
 # ---------------------------------------------------------------------------
-
-
-def test_frequency_offset_still_rejected_in_receiver_active_mode():
-    from dataclasses import dataclass, field
-
-    from qkd.link import ChannelObservables, LinkObservables
-
-    @dataclass(frozen=True)
-    class _FrequencyOffsetEffect:
-        effect_id: str = field(default="frequency_offset_thing", init=False)
-
-        def evaluate(self, t, geom, *, context):
-            return LinkObservables(channel=ChannelObservables(frequency_offset_hz=1.0))
-
-    receiver = ReceiverModel(pi=(0.8, 0.15, 0.05))
-    with pytest.raises(UnsupportedLinkObservableError):
-        simulate_pass(
-            MissionConfig(samples=5), receiver=receiver, link_effects=[_FrequencyOffsetEffect()]
-        )
 
 
 def test_intensity_factor_still_rejected_in_receiver_active_mode():

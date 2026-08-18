@@ -478,6 +478,8 @@ def _simulate_pass_receiver_active(
         link_controls, union_registry, stack_names
     )
     gate_window_s = receiver_controls.get("gate_window_s")
+    filter_sigma_hz = receiver_controls.get("filter_sigma_hz")
+    doppler_residual_fraction = receiver_controls.get("doppler_residual_fraction")
 
     base_channel_states = [
         channel_state(
@@ -538,6 +540,9 @@ def _simulate_pass_receiver_active(
         sky_condition=cfg.sky_condition,
         receiver_inputs_list=receiver_inputs_list,
         gate_window_s=gate_window_s,
+        filter_sigma_hz=filter_sigma_hz,
+        doppler_residual_fraction=doppler_residual_fraction,
+        source_linewidth_sigma_hz=receiver.source_linewidth_sigma_hz,
         link_mode=link_mode,
         law_effect=law_effect,
         provider=provider,
@@ -570,6 +575,9 @@ def _simulate_profile_receiver(
     sky_condition: str,
     receiver_inputs_list: list[ReceiverInputs],
     gate_window_s: float | None,
+    filter_sigma_hz: float | None,
+    doppler_residual_fraction: float | None,
+    source_linewidth_sigma_hz: float,
     link_mode: str,
     law_effect,
     provider: TableGeometryProvider,
@@ -600,6 +608,9 @@ def _simulate_profile_receiver(
                     receiver_inputs=inputs,
                     gate_window_s=gate_window_s,
                     pulse_repetition_rate_hz=pulse_repetition_rate_hz,
+                    filter_sigma_hz=filter_sigma_hz,
+                    doppler_residual_fraction=doppler_residual_fraction,
+                    source_linewidth_sigma_hz=source_linewidth_sigma_hz,
                 )
             )
     else:
@@ -617,6 +628,9 @@ def _simulate_profile_receiver(
                     receiver_inputs=inputs,
                     gate_window_s=gate_window_s,
                     pulse_repetition_rate_hz=pulse_repetition_rate_hz,
+                    filter_sigma_hz=filter_sigma_hz,
+                    doppler_residual_fraction=doppler_residual_fraction,
+                    source_linewidth_sigma_hz=source_linewidth_sigma_hz,
                 )
             )
 

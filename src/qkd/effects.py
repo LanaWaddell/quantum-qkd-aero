@@ -268,10 +268,13 @@ class DopplerShiftEffect:
     is an explicit required parameter (finite, > 0); no hidden wavelength
     default.
 
-    Not in the production stack (plan §1, §8): Doppler stays bridge-rejected
-    by ``qkd.link.apply_link_state`` until LINK-6 wires
-    ``frequency_offset_hz`` into an estimator-owned consumer. Usable today
-    directly at the ``qkd.link.ChannelStack`` level for research use.
+    Not in the production stack (plan §1, §8). **Now consumable (LINK-6b,
+    ``docs/LINK_6B_PLAN.md`` §1.2):** ``frequency_offset_hz`` is folded into
+    the receiver's spectral-filter acceptance mapping whenever a
+    ``ReceiverModel`` is active; it remains bridge-rejected by
+    ``qkd.link.apply_link_state`` on the legacy (``receiver=None``) path.
+    Usable today directly at the ``qkd.link.ChannelStack`` level for
+    research use, and as a receiver-active ``link_effects`` member.
     """
 
     carrier_frequency_hz: float
@@ -903,4 +906,121 @@ class DetectorDarkRateEffect:
     ) -> LinkObservables:
         return LinkObservables(
             detector=DetectorObservables(dark_count_rate_hz=self.dark_count_rate_hz)
+        )
+
+
+# ---------------------------------------------------------------------------
+# LINK-6b -- built-in constant-parameter owners for the three remaining
+# channel-side observables (docs/LINK_6B_PLAN.md §4). Same LINK-2 pattern as
+# the LINK-6a rate owners above: fixed IDs, construction-time domains, ignore
+# ``context`` ("a constant is a function that ignores t"). Not added to the
+# production stack; consumed only by ``qkd.detection`` when a
+# ``ReceiverModel`` is active (LINK-6b plan §1 ownership contract).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TimingJitterEffect:
+    """Independent rms arrival-time-spread contributor owner (LINK-6b plan §4).
+
+    ``jitter_sigma_s`` is one independent rms contributor to the stack-
+    composed ``channel.timing_jitter_s``; ``qkd.link.ChannelStack`` already
+    composes multiple nonzero contributors in quadrature
+    (``sqrt(sum(sigma_i**2))``, LINK-1's discharged rule) -- the caller may
+    stack several instances of this effect. No ``correlated_fields``: a
+    declared-correlated contributor is a distinct, not-yet-implemented
+    escape hatch (``qkd.link`` module docstring).
+
+    Domain: finite, ``>= 0``, validated at construction via :func:`_require`.
+    Not in the production stack; a receiver-active ``simulate_pass`` call
+    consumes this field via ``qkd.detection.extract_receiver_inputs`` and
+    the §1.1 gate-acceptance mapping.
+    """
+
+    jitter_sigma_s: float
+    effect_id: str = field(default="timing_jitter", init=False)
+
+    def __post_init__(self) -> None:
+        _require("jitter_sigma_s", self.jitter_sigma_s, lo=0.0, hi=math.inf)
+
+    def evaluate(
+        self, t: float, geom: PassGeometry, *, context: EffectEvaluationContext
+    ) -> LinkObservables:
+        return LinkObservables(
+            channel=ChannelObservables(timing_jitter_s=self.jitter_sigma_s)
+        )
+
+
+@dataclass(frozen=True)
+class PolarizationMisalignmentEffect:
+    """Direct error-probability misalignment owner (LINK-6b plan §4).
+
+    ``error_prob`` composes directly as ``channel.misalignment_error`` -- the
+    LINK-1 single-contributor rule (at most one nonzero misalignment
+    contributor per stack; a second nonzero contributor anywhere in the same
+    stack, including :class:`PhaseMisalignmentEffect`, raises
+    :class:`~qkd.link.SingleContributorConflictError`) applies unchanged.
+
+    Domain: finite, in ``[0, 0.5]``, validated at construction via
+    :func:`_require`. Not in the production stack; a receiver-active
+    ``simulate_pass`` call consumes this field via
+    ``qkd.detection.extract_receiver_inputs`` and the §1.3 intrinsic-error
+    mapping.
+    """
+
+    error_prob: float
+    effect_id: str = field(default="polarization_misalignment", init=False)
+
+    def __post_init__(self) -> None:
+        _require("error_prob", self.error_prob, lo=0.0, hi=0.5)
+
+    def evaluate(
+        self, t: float, geom: PassGeometry, *, context: EffectEvaluationContext
+    ) -> LinkObservables:
+        return LinkObservables(
+            channel=ChannelObservables(misalignment_error=self.error_prob)
+        )
+
+
+@dataclass(frozen=True)
+class PhaseMisalignmentEffect:
+    """Time-bin phase-error misalignment owner, ``sin**2`` model (LINK-6b plan §4).
+
+    Discharges the evidence memo's ``sin**2(delta_phi)`` DV time-bin phase-
+    error model (LINK-1 module docstring, item 2) as an *owner* mapping --
+    not a stack combiner. ``channel.misalignment_error = sin(delta_phi_rad)
+    ** 2``; the LINK-1 single-contributor rule applies unchanged (a second
+    nonzero misalignment contributor anywhere in the same stack, including
+    :class:`PolarizationMisalignmentEffect`, raises
+    :class:`~qkd.link.SingleContributorConflictError`).
+
+    **Domain is the parameter, not the periodic output (B5, binding):**
+    ``0 <= delta_phi_rad <= pi / 4`` is enforced on ``delta_phi_rad`` itself
+    at construction, via :func:`_require` -- *not* on the emitted
+    ``sin**2(delta_phi_rad)`` value, which is periodic and would otherwise
+    let an out-of-model phase like ``pi`` pass silently (``sin**2(pi) == 0``
+    is in the output's ``[0, 1]`` range but far outside the small-angle
+    time-bin phase model this class discharges). Wrapped/arbitrary phase is
+    out of model; canonical phase reduction is not defined here. Both
+    boundaries (``0`` and ``pi / 4``) are accepted; ``pi / 4 + epsilon`` and
+    ``pi`` are rejected.
+
+    Not in the production stack; a receiver-active ``simulate_pass`` call
+    consumes the emitted ``misalignment_error`` via
+    ``qkd.detection.extract_receiver_inputs`` and the §1.3 intrinsic-error
+    mapping.
+    """
+
+    delta_phi_rad: float
+    effect_id: str = field(default="phase_misalignment", init=False)
+
+    def __post_init__(self) -> None:
+        _require("delta_phi_rad", self.delta_phi_rad, lo=0.0, hi=math.pi / 4.0)
+
+    def evaluate(
+        self, t: float, geom: PassGeometry, *, context: EffectEvaluationContext
+    ) -> LinkObservables:
+        misalignment_error = math.sin(self.delta_phi_rad) ** 2
+        return LinkObservables(
+            channel=ChannelObservables(misalignment_error=misalignment_error)
         )

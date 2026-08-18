@@ -79,9 +79,19 @@ def test_receiver_model_rejects_unknown_operating_convention():
 
 
 def test_receiver_model_controls_declares_gate_window_with_period_coupled_bounds():
+    # NOT a plan §7 enumerated edit -- flagged deviation (see the
+    # implementation report). LINK-6b plan §2/§10 adds two more
+    # receiver-owned controls (filter_sigma_hz, doppler_residual_fraction)
+    # to this same ReceiverModel.controls() declaration surface (the only
+    # hook mission.py's union-registry assembly calls for receiver-owned
+    # controls, LINK-6a plan §2 R4); this test's single-control unpacking
+    # is necessarily superseded by any correct LINK-6b implementation of
+    # the plan's own "two controls" file-inventory line (§10).
     receiver = ReceiverModel(pi=(0.8, 0.15, 0.05))
-    (spec,) = receiver.controls(pulse_repetition_rate_hz=1.0e8)
-    assert spec.name == "gate_window_s"
+    specs = receiver.controls(pulse_repetition_rate_hz=1.0e8)
+    by_name = {spec.name: spec for spec in specs}
+    assert set(by_name) == {"gate_window_s", "filter_sigma_hz", "doppler_residual_fraction"}
+    spec = by_name["gate_window_s"]
     assert spec.unit == "s"
     assert spec.bounds == (MIN_GATE_WINDOW_S, 1.0 / 1.0e8)
 
@@ -92,8 +102,14 @@ def test_receiver_model_controls_declares_gate_window_with_period_coupled_bounds
 
 
 def test_extract_receiver_inputs_returns_exact_consumed_field_set():
+    # LINK-6b plan §7: four -> seven consumed fields.
     state = EffectiveLinkState(
-        channel=ChannelObservables(background_rate_hz=123.0, misalignment_error=0.1),
+        channel=ChannelObservables(
+            background_rate_hz=123.0,
+            misalignment_error=0.1,
+            frequency_offset_hz=7.5e9,
+            timing_jitter_s=1e-10,
+        ),
         detector=DetectorObservables(
             dark_count_rate_hz=45.0, afterpulse_prob=0.02, dead_time_s=1e-7
         ),
@@ -106,12 +122,17 @@ def test_extract_receiver_inputs_returns_exact_consumed_field_set():
         dark_count_rate_hz=45.0,
         afterpulse_prob=0.02,
         dead_time_s=1e-7,
+        timing_jitter_s=1e-10,
+        frequency_offset_hz=7.5e9,
+        misalignment_error=0.1,
     )
-    # The residual zeroes only the four consumed fields; every other field
-    # (including 6b/source fields) passes through unchanged for the
-    # existing apply_link_state bridge to reject.
+    # The residual zeroes only the seven consumed fields; the source
+    # partition (still bridge-rejected, LINK-5) passes through unchanged
+    # for the existing apply_link_state bridge to reject.
     assert residual.channel.background_rate_hz == 0.0
-    assert residual.channel.misalignment_error == 0.1
+    assert residual.channel.misalignment_error == 0.0
+    assert residual.channel.frequency_offset_hz == 0.0
+    assert residual.channel.timing_jitter_s == 0.0
     assert residual.detector.dark_count_rate_hz == 0.0
     assert residual.detector.afterpulse_prob == 0.0
     assert residual.detector.dead_time_s == 0.0
