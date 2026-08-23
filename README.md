@@ -80,7 +80,7 @@ development record carries dated corrections rather than silently rewriting hist
   L3 ranges/vocabulary, L4 constants, and L5 cross-field consistency by default before
   every write, including the axis-conditional yield rule that keeps aggregates
   dimensionally honest (`docs/PR_D_SCHEMA_HARDENING.md`).
-- A pytest suite (**163 with the Qiskit extra, 142 without**) covering the physics and the
+- A pytest suite (**622 with the Qiskit extra, 601 with the Qiskit-specific file ignored**) covering the physics and the
   honesty guards (turbulence-independence, geometry coupling, decoy bounds,
   PNS-invisible-to-QBER, fidelity arch, fibre-contract flow, provenance enforcement,
   deep-schema goldens and mutation negatives, determinism).
@@ -110,11 +110,19 @@ effects compose into an `EffectiveLinkState` under explicit per-field rules,
 stochastic effects draw from hash-derived order-independent RNG streams for exact
 replay, operational controls are declared explicit inputs with feasibility coupling
 to the composed link state, and estimator-stage observables (QBER, secure-key rate)
-exist only after composition — never as per-effect fields. The ADR is a contract
-only: **LINK-1 is the active implementation lane**, and no LINK code exists yet. The
-ADR was ratified with its body unchanged after assessment against the field's
-consolidated time-bin review (see `docs/references/`), which independently validated
-the composition rules it defines.
+exist only after composition — never as per-effect fields. The **LINK architectural
+lane remains active**, with LINK-1 through LINK-6b implemented; source consumption,
+receiver-aware Eve integration, filter/background coupling, and the benchmark sweep
+driver remain open. ADR-0003 was ratified with its body unchanged after assessment
+against the field's consolidated time-bin review (see `docs/references/`), which
+independently validated the composition rules it defines.
+
+Above the physics pipeline, **ADR-0004** (ratified 2026-08-23) defines a fourth,
+adaptive-coupling tier and a strict hybrid QKD+PQC boundary with separate physical and
+cryptographic evidence streams. **HYBRID-0 Stage 0 is complete as documentation only**:
+`docs/architecture/pqc_hybrid_architecture.md` is the informative companion, while its
+schemas, policy engine, registries, and hybrid derivation remain planned rather than
+implemented.
 
 ## The medium-general channel layer (built & certified)
 
@@ -136,15 +144,12 @@ migration. The generalization was built and verified in sequence:
   distance curve** with **maximum secure distance** (~190 km on the default illustrative
   fibre) as the figure of merit.
 
-**Next / active:** the **LINK-1 workstream** — first evidence-gathering implementation
-lane under the ratified ADR-0003 contract, opening with two evidence-discharged
-composition rules (quadrature composition of independent temporal broadening;
-sin²(∆ϕ) low-order misalignment default) and the deferred fibre/PathProvider
-placement decision; a **Phase 2D trust/coherence layer** reading the computed
-`PhysicsSignals` (QBER, decoy anomaly, CHSH/teleportation margins, loss, secure-key
-rate) from behind the physics wall — no trust field inside the physics modules; and
-**coherence-enhancement optimization** over the filtering levers (window, bandwidth,
-field of view) against signal loss.
+**Next / active:** the **LINK lane** continues after LINK-6b with source consumption,
+receiver-aware Eve integration, and honest filter/background coupling before any
+benchmark advantage claim. **HYBRID Stage 1** may add boundary dataclasses and schema
+validation under ADR-0004, but no cryptographic derivation yet. Phase 2D remains a
+downstream reader of computed `PhysicsSignals`; no trust field enters the physics
+modules.
 
 ## Horizon
 
@@ -179,7 +184,8 @@ Run the simulator (writes `outputs/results.json` and the pass plot):
 python src/qkd/run.py
 ```
 
-Run the test suite — **142 tests, or 163 with the Qiskit extra installed**:
+Run the test suite — **601 tests with the Qiskit-specific file ignored, or 622 with the
+Qiskit extra installed**:
 
 ```
 pytest
@@ -194,11 +200,13 @@ npm start
 
 ## Code layout
 
-Active code is in `src/qkd/`: `channel.py` (atmospheric/free-space medium), `fibre.py`
-(fibre medium), `orbit.py`, `teleportation.py`, `chsh.py`, `bb84.py`, `eve.py`,
-`coherence.py`, `mission.py` (composition), `provenance.py` (enforced origin tags),
-`signals.py` (interface dataclasses), `run.py` (I/O), `schema.py`. The dashboard is in
-`dashboard.js`; tests in `tests/`. `docs/INTERFACES.md` is the canonical contract and
+Active code is in `src/qkd/`: the medium/physics modules (`channel.py`, `fibre.py`,
+`orbit.py`, `teleportation.py`, `chsh.py`, `bb84.py`, `eve.py`, `coherence.py`); the
+LINK/TWIN modules (`link.py`, `effects.py`, `detection.py`, `replay.py`, `benchmark.py`,
+`twin.py`, `twin_watermark.py`); and `mission.py` (composition), `provenance.py`
+(enforced origin tags), `signals.py` (interface dataclasses), `run.py` / `run_fibre.py`
+(I/O), and `schema.py`. The dashboard is in `dashboard.js`; tests in `tests/`.
+`docs/INTERFACES.md` is the canonical physics/output contract and
 carries the document authority index; `docs/architecture/` holds the ADRs and the
 architecture/status map; `docs/GLOSSARY.md` holds the binding vocabulary and the
 community-translation boundary for public-facing artifacts; `docs/references/` holds
