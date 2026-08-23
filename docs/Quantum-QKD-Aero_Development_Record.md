@@ -763,8 +763,12 @@ version) before editing; enumerate entry points / artifact writers / consumers f
   stale Scope labels r2/v3 became r3/v3.1, Revision 13 became live Revision 14, and its
   old LINK/test baseline was reconciled to `11dd75e`; no prior revision history was
   erased. Real local validation remained **622/601**, delta **+0/+0** from Rev 13.1.
-  No source, tests, schema, output, or physics behavior changed. Commit B's hash and
-  fresh-clone certification are deliberately deferred to the post-push Commit C.
+  No source, tests, schema, output, or physics behavior changed. Post-push certification
+  from a fresh GitHub clone of Commit B `4e8b066` confirmed the A/B commit boundaries,
+  Accepted/informative status markers, lane declaration, Development Record state, and
+  companion SHA-256 against the Commit B message. The Mac `qkd_env` dependency runtime
+  executed the clone's source: **622 passed** with Qiskit and **601 passed** with
+  `tests/test_teleportation_qiskit.py` ignored. Commit C records this evidence.
 
 - **2026-08-18 (Rev 13.1, `e3815c0`).** LINK-6b reconciled: the three remaining channel-side
   observables (`timing_jitter_s` → gate acceptance `erf(Δt/(2√2σ_t))` on the existing
