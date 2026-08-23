@@ -744,6 +744,19 @@ version) before editing; enumerate entry points / artifact writers / consumers f
 
 ## Correction Log
 
+- **2026-08-23 (Rev 14 certification correction).** Commit C (`89f3952`) described its
+  verification as "post-push certification." That verification was performed by Codex
+  in the local Mac `qkd_env` as the preparation/validation actor (Lana created the Git
+  commits) and is therefore recharacterized as **local validation**, not independent
+  certification. Independent post-push certification was performed by Claude on
+  2026-08-23 from a fresh GitHub sandbox clone of HEAD
+  `89f3952010b7cab3c4f2276e85aae02393e64c05`: commit boundaries A/B/C, ADR Accepted
+  status, the companion's single-line delta and SHA-256 anchor
+  (`d6c4a01b…fee898`), README lane declaration, Rev 14 provenance chain, and independent
+  sandbox test runs of **622 passed** with Qiskit / **601 passed** with the Qiskit file
+  ignored, delta **+0/+0**, were all confirmed. Certification record: this entry plus
+  the certification document retained in project context.
+
 - **2026-08-23 (Rev 14, HYBRID-0 Stage 0).** ADR-0004 r3 was ratified by Lana and
   added as Accepted in the minimal Commit A recorded in §1. It adds the adaptive-coupling
   tier above ADR-0003's three channel tiers and places hybrid QKD+PQC orchestration above
