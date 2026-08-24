@@ -142,7 +142,7 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **ADR-0004 / HYBRID-0** | Adaptive-coupling tier + hybrid QKD/PQC boundary; informative companion and staged implementation contract | ✅ ADR Accepted in `d7c9c33`; Stage 0 complete (2026-08-23) |
 | **HYBRID-1** | Boundary state model: tier-4 attribution contracts, hybrid enums/dataclasses/validation, canonical serialization/digests, posture-registry snapshot | ✅ Stage 1 complete (2026-08-24) |
 | **FIXTURE-1** | Non-production quasiperiodic misalignment stress fixture and bounded finite-range discrepancy note | ✅ `4c8d817` (2026-08-24) |
-| **ADAPT-1** | Passive tier-4 attribution monitor over committed scalar references and synthetic traces | ✅ implementation complete; hash pending post-push certification |
+| **ADAPT-1** | Passive tier-4 attribution monitor over committed scalar references and synthetic traces | ✅ `8993d6c` (2026-08-24) |
 
 **Test suite (current Rev 17 local `qkd_env` validation):** **948 passed**
 (`qkd_env/bin/python -m pytest -q`); excluding the Qiskit-specific file, **927 passed**
@@ -814,6 +814,31 @@ version) before editing; enumerate entry points / artifact writers / consumers f
 ---
 
 ## Correction Log
+
+- **2026-08-24 (Rev 17.1, post-push certification, Claude).** Both commits verified on a
+  fresh clone of the public remote at HEAD `8993d6c` (`4c8d817` FIXTURE-1 → `8993d6c`
+  ADAPT-1). Process note, recorded for honesty: the PI pushed before independent
+  verification this once (the usual order is verify-then-push); certification was
+  therefore performed entirely post-push and found nothing requiring remediation.
+  Findings: FIXTURE-1's four files hash-identical to the Echo-reviewed rev 4/5 set;
+  the transient APPLY note correctly absent; committed `docs/ADAPT_1_PLAN.md`
+  hash-identical to the issued v1.4.1 packet (`67b10ac4…c1ac7d`); frozen
+  `adaptive/contracts.py` byte-unchanged from `6f292d4`; `docs/private/` untracked;
+  both commits' file lists exactly match their staging inventories with nothing else.
+  The two superseded-test edits are precisely the permitted changes (scan narrowed to
+  `contracts.py`; allowlist gained exactly `module == "qkd.canonical"`), each with its
+  citing comment, physics-prefix assertions verbatim; HYBRID canonical fixtures
+  byte-untouched (the refactor oracle held); C5 verified — the adaptive import-graph
+  test asserts `{"serialization.py"}` is the only hybrid importer of `qkd.canonical`.
+  §6.1 anchors literal in the committed tests: master seed `20260825`, component band
+  `(3, 19)/200` re-derived and asserted, one-sided combined bound `32/200`, power floor
+  `45/50`, arm-equivalence `≤ 7/50`, and the three step-angle literals. Suite on the
+  fresh no-qiskit clone: **927 passed + 1 skipped** (948 full-env by PI under
+  `qkd_env`); default emission `3d1544…f1417` unchanged — the eleventh and twelfth
+  consecutive changes under the frozen default artifact. ADAPT-1 is the first
+  Codex-implemented lane: two stop-and-surface events (preflight inventory conflict;
+  unenumerated hybrid import guard), both correct, both resolved by PI-approved packet
+  amendment before any test was touched.
 
 - **2026-08-24 (Rev 17, FIXTURE-1 + ADAPT-1).** The PI resolved the sequencing conflict by
   landing FIXTURE-1 first as isolated commit `4c8d817`; its transient APPLY note was deleted
