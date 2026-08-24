@@ -1,5 +1,16 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
+> **REVISION 16 — updated 2026-08-24 (LINK-7 source consumption, `f8c82f2`; see Correction Log).**
+> LINK-7 consumes `source.intensity_factor` — the last deferred observable — completing the
+> ADR-0003 estimator boundary: every partition field now has an authorized consumer or an
+> explicit identity default. Robust decoy inversion under a hard certified common-mode bound
+> (complete-rate minimization with a single witness, certified 1-D minimizer, conservative
+> emission `R_certified = max(0, R_hat − ε)`); code-derived source-support gate (manifest echo
+> audit-only); manifest v3 with strict v1/v2/v3 matrix and Pre-Gate 0 v2 oracle; first-ever
+> `bb84.py` edit (pure statistics factoring, parity-certified). Suite **874 full / 853
+> no-qiskit-file** (853 + 1 skipped without qiskit); default emission SHA-256 unchanged —
+> **tenth** consecutive change. Details in `docs/LINK_7_PLAN.md` §15 and the Correction Log.
+>
 > **REVISION 15 — updated 2026-08-24 (HYBRID-1 Stage 1 — boundary state model;
 > see Correction Log).** HYBRID-1 implements the ADR-0004 D2 hybrid QKD+PQC
 > boundary's **state model only**: tier-4-owned attribution contracts at
@@ -129,7 +140,7 @@ reverified in this sandbox and is carried forward unchanged since HYBRID-1 touch
 qiskit-dependent path. Per-commit history (full / no-qiskit-file,
 all recomputed 2026-08-18): `03736da` 163/142 → LINK-1 `8b7ef46` 219/198 → LINK-2 `803f854`
 255/234 → LINK-3 `223d25c` 294/273 → LINK-4 `4df5b7f` 347/326 → LINK-5 `bdd73de` 389/368 →
-TWIN-1 `eeea12e` 414/393 → TWIN-2 `60ff5a1` 439/418 → LINK-6a `2763c24` 562/541 → LINK-6b `e3815c0` 622/601 → HYBRID-1 `c69e461` **821 full / 800 no-qiskit-file** (821 passed, 0 skipped certified by the PI under `qkd_env` with the qiskit extra, 2026-08-24; 800 passed + 1 skipped independently certified on a fresh no-qiskit clone of the public remote, post-push, 2026-08-24 — the implementer's forward-written text correctly declined to state the full count before it was actually run). Default
+TWIN-1 `eeea12e` 414/393 → TWIN-2 `60ff5a1` 439/418 → LINK-6a `2763c24` 562/541 → LINK-6b `e3815c0` 622/601 → HYBRID-1 `c69e461` 821/800 → LINK-7 `f8c82f2` **874 full / 853 no-qiskit-file** (874 certified by the PI under `qkd_env`; 853 + 1 skipped independently certified on a fresh no-qiskit clone, post-push). Superseded HYBRID-1 detail preserved: `c69e461` **821 full / 800 no-qiskit-file** (821 passed, 0 skipped certified by the PI under `qkd_env` with the qiskit extra, 2026-08-24; 800 passed + 1 skipped independently certified on a fresh no-qiskit clone of the public remote, post-push, 2026-08-24 — the implementer's forward-written text correctly declined to state the full count before it was actually run). Default
 emission SHA-256 `3d1544027517197062097234d272ecbfbc03cd1864bbd0ee46169cf1250f1417` at every
 one of these commits (byte identity is environment-local — Mac arm64/numpy 2.4.6 vs cloud
 x86_64/numpy 2.4.4 differ at the ULP; the in-process parity tests are the portable oracle).
@@ -772,6 +783,24 @@ version) before editing; enumerate entry points / artifact writers / consumers f
 ---
 
 ## Correction Log
+
+- **2026-08-24 (Rev 16, LINK-7 + post-push certification, Claude).** LINK-7 (`f8c82f2`)
+  reconciled and certified: fresh public clone — all thirteen code/test/fixture files
+  hash-identical to the independently verified copies; `docs/private/` untracked; suite
+  853 passed + 1 skipped (no-qiskit clone), 874 by PI under `qkd_env`; default emission
+  `3d1544…f1417` unchanged (tenth consecutive change; an implementer report initially
+  cited a wrong hash from hashing the wrong artifact — corrected against
+  `outputs/results.json` during verification). Highlights of record: the §13 addendum
+  process worked as designed — the implementer left three unenumerated failing tests
+  failing rather than silently patching them, the PI approved the addendum, and only
+  then were they edited; `bb84.py`'s first-ever modification is the D3 statistics
+  factoring (+33/−9, laws moved verbatim, certified by the frozen-hash set, a pinned-grid
+  parity test, and the byte-identical default path); a genuine robustness finding
+  (minimizer non-convergence on wide clamped-zero plateaus) is fail-loud as
+  `RobustRateCertificationError`, with fix-vs-accept and the closed-form Lipschitz
+  derivation registered as follow-ups for Echo's post-review. Consumption state after
+  LINK-7: the residual bridge rejects nothing non-identity; the anti-smuggling machinery
+  is retained by completion, not deletion, for future partition additions.
 
 - **2026-08-24 (Rev 15 post-push certification, Claude).** Implementation commit
   `c69e461` verified on a fresh clone of the public remote: all fifteen delivered
