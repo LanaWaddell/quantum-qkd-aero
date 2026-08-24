@@ -119,6 +119,37 @@ def secure_key_rate(
     return max(0.0, raw_rate)
 
 
+def expected_block_statistics(channel, intensities, detector):
+    """Statistics-only truth generator: expected gains and per-intensity QBER.
+
+    LINK-7 plan §3.2/§10-D3: extracted verbatim from ``run_decoy_bb84``'s
+    honest branch (below), which now calls this function -- pure factoring,
+    no law change (certified by the frozen-hash set, a parity test on a
+    pinned grid, and the byte-identical default path). This function
+    performs no decoy inversion: it never calls
+    :func:`estimate_decoy_bounds` or :func:`secure_key_rate`. LINK-7 uses it
+    to generate truth statistics at *realized* intensities without any
+    decoy-inversion function ever receiving the realized source factor.
+    """
+
+    _validate_channel_and_detector(channel, detector)
+    _validate_intensities(intensities)
+
+    eta = channel.transmittance * detector.detection_efficiency
+    y0 = detector.dark_count_prob
+    ed = channel.intrinsic_qber
+
+    gains = {
+        name: _honest_gain(mean_photon_number, eta, y0)
+        for name, mean_photon_number in intensities.items()
+    }
+    qber_per_intensity = {
+        name: _honest_qber(mean_photon_number, eta, y0, ed)
+        for name, mean_photon_number in intensities.items()
+    }
+    return gains, qber_per_intensity
+
+
 def run_decoy_bb84(channel, intensities, n_pulses, detector, eve=None, *, q=0.5):
     """Run deterministic expected-value decoy BB84.
 
@@ -141,14 +172,9 @@ def run_decoy_bb84(channel, intensities, n_pulses, detector, eve=None, *, q=0.5)
     y0 = detector.dark_count_prob
     ed = channel.intrinsic_qber
 
-    honest_gains = {
-        name: _honest_gain(mean_photon_number, eta, y0)
-        for name, mean_photon_number in intensities.items()
-    }
-    honest_qber_per_intensity = {
-        name: _honest_qber(mean_photon_number, eta, y0, ed)
-        for name, mean_photon_number in intensities.items()
-    }
+    honest_gains, honest_qber_per_intensity = expected_block_statistics(
+        channel, intensities, detector
+    )
 
     if eve is None:
         gains = honest_gains

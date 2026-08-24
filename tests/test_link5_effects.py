@@ -319,7 +319,8 @@ def test_intensity_factor_not_reachable_through_detector_params_channel_state_or
     # layer itself (qkd.link / qkd.effects, where the field is legitimately
     # defined and used) mentions the field at all -- there is no back door.
     qkd_dir = Path(qkd.__file__).parent
-    excluded = {"link.py", "effects.py"}
+    # LINK-7 §13 addendum: authorized consumption path.
+    excluded = {"link.py", "effects.py", "detection.py", "mission.py", "replay.py"}
     checked_any = False
     for path in qkd_dir.glob("*.py"):
         if path.name in excluded:

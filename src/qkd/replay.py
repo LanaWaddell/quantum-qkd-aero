@@ -15,10 +15,17 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from numbers import Real
 
-from qkd.detection import PdtConfig, ReceiverModel
+from qkd.detection import (
+    DetectionError,
+    PdtConfig,
+    ReceiverModel,
+    active_source_effect_ids,
+    validate_source_uncertainty_gate,
+)
 from qkd.effects import (
     AtmosphericAbsorptionEffect,
     BackgroundLightEffect,
+    CalibratedSourceFactorEffect,
     DetectorAfterpulsingEffect,
     DetectorDarkRateEffect,
     DetectorDeadTimeEffect,
@@ -38,17 +45,22 @@ from qkd.link import ChannelEffect
 from qkd.signals import DetectorParams
 
 
-LINK_PIPELINE_VERSION = "link-6b.1"
+LINK_PIPELINE_VERSION = "link-7.1"
 LINK_PIPELINE_VERSION_V1 = "link-6a.1"
 """The historical LINK-6a pipeline-version string (LINK-6b plan §5, B3
 compatibility matrix) -- required exactly on ``manifest_version == 1``
+manifests.
+"""
+LINK_PIPELINE_VERSION_V2 = "link-6b.1"
+"""The historical LINK-6b pipeline-version string (LINK-7 plan §5, strict
+three-row matrix) -- required exactly on ``manifest_version == 2``
 manifests; ``LINK_PIPELINE_VERSION`` (above) is required exactly on
-``manifest_version == 2``.
+``manifest_version == 3``, the current version.
 """
 
 RESULTS_SCHEMA_VERSION = "2.0"
-CURRENT_MANIFEST_VERSION = 2
-SUPPORTED_MANIFEST_VERSIONS = frozenset({1, 2})
+CURRENT_MANIFEST_VERSION = 3
+SUPPORTED_MANIFEST_VERSIONS = frozenset({1, 2, 3})
 
 PRODUCTION_EFFECT_IDS = (
     "system_efficiency",
@@ -76,6 +88,15 @@ class ReplayRefusedError(ReplayError):
 
 class AuditSpecValidationError(ReplayError):
     """Raised when a custom effect's ``audit_spec()`` returns a non-scalar/non-finite value."""
+
+
+class SourceSupportEchoMismatchError(ReplayError):
+    """Raised when a v3 manifest's ``receiver.source_support_echo`` disagrees
+    with the composed active-source support recomputed from the
+    reconstructed effects (LINK-7 plan §5, R12.2 -- the echo is an audit
+    field, never trusted; a disagreement means the manifest is internally
+    inconsistent, so replay refuses rather than silently trusting either
+    value)."""
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +143,7 @@ _EFFECT_REGISTRY: tuple[tuple[str, type, tuple[str, ...]], ...] = (
     ("timing_jitter", TimingJitterEffect, ("jitter_sigma_s",)),
     ("polarization_misalignment", PolarizationMisalignmentEffect, ("error_prob",)),
     ("phase_misalignment", PhaseMisalignmentEffect, ("delta_phi_rad",)),
+    ("calibrated_source_factor", CalibratedSourceFactorEffect, ("half_width",)),
 )
 
 EFFECT_CODECS: dict[str, EffectCodec] = {
@@ -191,6 +213,7 @@ def build_manifest(
     link_mode: str,
     pdt_config: PdtConfig | None,
     tau_mem_s: float | None,
+    source_support_echo: tuple[float, float] | None = None,
 ) -> str:
     """Build the canonical-JSON manifest string (plan §4, Appendix A.2)."""
 
@@ -280,6 +303,14 @@ def build_manifest(
             },
             "operating_convention": receiver.operating_convention,
             "source_linewidth_sigma_hz": receiver.source_linewidth_sigma_hz,
+            "source_intensity_uncertainty": receiver.source_intensity_uncertainty,
+            # LINK-7 (plan §1, R12.2) -- audit-only echo of the composed
+            # active-source-support gate result: recorded for human/tooling
+            # inspection, never trusted. replay_from_provenance recomputes
+            # this from the reconstructed effects and rejects on disagreement.
+            "source_support_echo": (
+                None if source_support_echo is None else list(source_support_echo)
+            ),
         }
     if link_mode == "pdt":
         manifest["pdt_config"] = {
@@ -328,16 +359,47 @@ _INTENSITY_KEYS = frozenset({"signal", "decoy", "vacuum"})
 _SKY_CONDITIONS = frozenset({"night", "twilight", "day"})
 _RECEIVER_KEYS_V1 = frozenset({"pi", "operating_convention"})
 _RECEIVER_KEYS_V2 = frozenset({"pi", "operating_convention", "source_linewidth_sigma_hz"})
+_RECEIVER_KEYS_V3 = _RECEIVER_KEYS_V2 | {
+    "source_intensity_uncertainty",
+    "source_support_echo",
+}
+"""LINK-7 plan §5, R12.2 -- the exact v3 receiver key set: the v2 keys plus
+``source_intensity_uncertainty`` (nullable) and ``source_support_echo``
+(nullable, audit-only -- never trusted by the compatibility gate; see
+:func:`replay_from_provenance`)."""
+
+_RECEIVER_KEYS_BY_MANIFEST_VERSION = {
+    1: _RECEIVER_KEYS_V1,
+    2: _RECEIVER_KEYS_V2,
+    3: _RECEIVER_KEYS_V3,
+}
+_PIPELINE_VERSION_BY_MANIFEST_VERSION: dict[int, str] = {
+    1: LINK_PIPELINE_VERSION_V1,
+    2: LINK_PIPELINE_VERSION_V2,
+    3: LINK_PIPELINE_VERSION,
+}
+"""LINK-7 plan §5 -- the strict three-row ``manifest_version <-> pipeline_version``
+compatibility matrix. Populated after the module constants above."""
 _PI_KEYS = frozenset({"signal", "decoy", "vacuum"})
 _V1_REJECTED_EFFECT_IDS = frozenset(
-    {"timing_jitter", "polarization_misalignment", "phase_misalignment"}
+    {
+        "timing_jitter",
+        "polarization_misalignment",
+        "phase_misalignment",
+        "calibrated_source_factor",
+    }
 )
-"""LINK-6b effect ids that are rejected in a ``manifest_version == 1`` manifest
-(plan §5, B3 compatibility matrix)."""
+"""LINK-6b/LINK-7 effect ids that are rejected in a ``manifest_version == 1``
+manifest (plan §5, strict three-row matrix)."""
+
+_V2_REJECTED_EFFECT_IDS = frozenset({"calibrated_source_factor"})
+"""LINK-7 effect ids that are rejected in a ``manifest_version == 2`` manifest
+(plan §5, strict three-row matrix -- v2 stays frozen exactly as LINK-6b
+defined it)."""
 
 _V1_REJECTED_CONTROL_NAMES = frozenset({"filter_sigma_hz", "doppler_residual_fraction"})
 """LINK-6b control names that are rejected in a ``manifest_version == 1`` manifest
-(plan §5, B3 compatibility matrix)."""
+(plan §5, B3 compatibility matrix). LINK-7 introduces no new control names."""
 _PDT_CONFIG_KEYS = frozenset(
     {"fading_coherence_time_s", "block_duration_s", "tau_mem_s", "order"}
 )
@@ -488,8 +550,16 @@ def validate_manifest_object(manifest: Mapping[str, object]) -> None:
             _require_exact_keys(params, frozenset(codec.param_keys), f"{path}.params")
         if manifest_version == 1 and effect_id in _V1_REJECTED_EFFECT_IDS:
             raise ManifestValidationError(
-                f"{path}.effect_id={effect_id!r} is a LINK-6b effect id; not "
-                "permitted in a manifest_version=1 manifest (plan §5, B3)."
+                f"{path}.effect_id={effect_id!r} is a LINK-6b/LINK-7 effect id; "
+                "not permitted in a manifest_version=1 manifest (plan §5, "
+                "strict three-row matrix)."
+            )
+        if manifest_version == 2 and effect_id in _V2_REJECTED_EFFECT_IDS:
+            raise ManifestValidationError(
+                f"{path}.effect_id={effect_id!r} is a LINK-7 effect id; not "
+                "permitted in a manifest_version=2 manifest (plan §5, strict "
+                "three-row matrix -- v2 stays frozen exactly as LINK-6b "
+                "defined it)."
             )
 
     all_registered = all(
@@ -523,7 +593,7 @@ def validate_manifest_object(manifest: Mapping[str, object]) -> None:
 
     if "receiver" in manifest:
         receiver = _require_mapping(manifest["receiver"], "receiver")
-        receiver_keys = _RECEIVER_KEYS_V1 if manifest_version == 1 else _RECEIVER_KEYS_V2
+        receiver_keys = _RECEIVER_KEYS_BY_MANIFEST_VERSION[manifest_version]
         _require_exact_keys(receiver, receiver_keys, "receiver")
         pi = _require_mapping(receiver["pi"], "receiver.pi")
         _require_exact_keys(pi, _PI_KEYS, "receiver.pi")
@@ -545,7 +615,7 @@ def validate_manifest_object(manifest: Mapping[str, object]) -> None:
         _require_member(
             operating_convention, frozenset({"next_live_gate_v1"}), "receiver.operating_convention"
         )
-        if manifest_version == 2:
+        if manifest_version in (2, 3):
             source_linewidth_sigma_hz = _require_finite_number(
                 receiver["source_linewidth_sigma_hz"], "receiver.source_linewidth_sigma_hz"
             )
@@ -554,6 +624,31 @@ def validate_manifest_object(manifest: Mapping[str, object]) -> None:
                     "receiver.source_linewidth_sigma_hz must be >= 0; got "
                     f"{source_linewidth_sigma_hz!r}."
                 )
+        if manifest_version == 3:
+            delta = receiver["source_intensity_uncertainty"]
+            if delta is not None:
+                delta = _require_finite_number(delta, "receiver.source_intensity_uncertainty")
+                if not (0.0 <= delta < 1.0):
+                    raise ManifestValidationError(
+                        "receiver.source_intensity_uncertainty must be null or "
+                        f"in [0, 1); got {delta!r}."
+                    )
+            echo = receiver["source_support_echo"]
+            if echo is not None:
+                if not isinstance(echo, list) or len(echo) != 2:
+                    raise ManifestValidationError(
+                        "receiver.source_support_echo must be null or a "
+                        f"2-element array; got {echo!r}."
+                    )
+                for index, item in enumerate(echo):
+                    _require_finite_number(
+                        item, f"receiver.source_support_echo[{index}]"
+                    )
+                if echo[0] > echo[1]:
+                    raise ManifestValidationError(
+                        "receiver.source_support_echo must be [lo, hi] with "
+                        f"lo <= hi; got {echo!r}."
+                    )
 
     if mode == "pdt":
         if "pdt_config" not in manifest:
@@ -588,14 +683,12 @@ def validate_manifest_object(manifest: Mapping[str, object]) -> None:
         raise ManifestValidationError("model_ids.pdt must be non-null iff mode == 'pdt'.")
 
     pipeline_version = _require_str(manifest["pipeline_version"], "pipeline_version")
-    expected_pipeline_version = (
-        LINK_PIPELINE_VERSION_V1 if manifest_version == 1 else LINK_PIPELINE_VERSION
-    )
+    expected_pipeline_version = _PIPELINE_VERSION_BY_MANIFEST_VERSION[manifest_version]
     if pipeline_version != expected_pipeline_version:
         raise ManifestValidationError(
             f"pipeline_version must be {expected_pipeline_version!r} for "
             f"manifest_version={manifest_version!r}; got {pipeline_version!r} "
-            "(plan §5, B3 compatibility matrix)."
+            "(plan §5, strict three-row compatibility matrix)."
         )
     _require_str(manifest["schema_version"], "schema_version")
 
@@ -676,20 +769,55 @@ def replay_from_provenance(manifest_json: str):
     if "receiver" in manifest:
         receiver_obj = manifest["receiver"]
         pi_obj = receiver_obj["pi"]
+        manifest_version = manifest["manifest_version"]
         # A v1 manifest never carries source_linewidth_sigma_hz -- the
         # reader supplies the identity default 0.0 (plan §5: "a v1 manifest
         # replays with source_linewidth_sigma_hz = 0.0 supplied by the
-        # reader").
+        # reader"). A v1/v2 manifest never carries source_intensity_
+        # uncertainty either -- the reader supplies the identity default
+        # None (LINK-7 plan §5: neither historical version could ever have
+        # emitted a source-active run, since intensity_factor was
+        # bridge-rejected before LINK-7).
         source_linewidth_sigma_hz = (
-            0.0
-            if manifest["manifest_version"] == 1
-            else receiver_obj["source_linewidth_sigma_hz"]
+            0.0 if manifest_version == 1 else receiver_obj["source_linewidth_sigma_hz"]
+        )
+        source_intensity_uncertainty = (
+            receiver_obj["source_intensity_uncertainty"] if manifest_version == 3 else None
         )
         receiver = ReceiverModel(
             pi=(pi_obj["signal"], pi_obj["decoy"], pi_obj["vacuum"]),
             operating_convention=receiver_obj["operating_convention"],
             source_linewidth_sigma_hz=source_linewidth_sigma_hz,
+            source_intensity_uncertainty=source_intensity_uncertainty,
         )
+
+        if manifest_version == 3:
+            # LINK-7 plan §1/§5, R12.2: the compatibility gate is always
+            # derived from code (never trusted from the manifest) -- this
+            # recomputation, from the just-reconstructed effects, is a pure
+            # integrity check on the echo field itself. simulate_pass below
+            # independently re-runs the real gate as part of normal
+            # composition regardless of this check's outcome.
+            recomputed_echo = None
+            active_ids = active_source_effect_ids(link_effects)
+            if active_ids:
+                try:
+                    recomputed_echo = validate_source_uncertainty_gate(
+                        link_effects, source_intensity_uncertainty
+                    )
+                except DetectionError:
+                    recomputed_echo = "incompatible"
+            stored_echo = receiver_obj["source_support_echo"]
+            stored_echo_normalized = (
+                None if stored_echo is None else tuple(stored_echo)
+            )
+            if recomputed_echo != "incompatible" and stored_echo_normalized != recomputed_echo:
+                raise SourceSupportEchoMismatchError(
+                    f"receiver.source_support_echo={stored_echo!r} disagrees with "
+                    f"the recomputed active-source support {recomputed_echo!r} "
+                    "derived from the reconstructed effects (LINK-7 plan §5, "
+                    "R12.2 -- the echo is audit-only and is never trusted)."
+                )
 
     pdt_config = None
     mode = manifest["mode"]

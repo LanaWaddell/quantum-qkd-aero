@@ -21,13 +21,16 @@ from qkd.detection import (
     ReceiverEveNotSupportedError,
     ReceiverInputs,
     ReceiverModel,
+    SourceTruthInputs,
     _assert_pdt_memory_invariant,
     classify_and_order_pdt_stack,
     compute_receiver_block,
     compute_receiver_block_pdt,
     extract_receiver_inputs,
+    extract_source_truth,
     validate_grid_and_block_duration,
     validate_pdt_guards,
+    validate_source_uncertainty_gate,
 )
 from qkd.effects import (
     AtmosphericAbsorptionEffect,
@@ -462,8 +465,29 @@ def _simulate_pass_receiver_active(
         # any admitted effect that nevertheless requests randomness raises
         # SeedRequiredError (defense in depth).
         stack = ChannelStack(prefix_effects, provider, seed=None)
+        # LINK-7 (plan §10-D2, Option B): source-active PDT is deferred --
+        # no registered source effect_id can ever reach here (excluded from
+        # PDT_ADMISSIBLE_EFFECTS, already rejected above by
+        # classify_and_order_pdt_stack), so the gate below never activates
+        # for PDT and is deliberately not called on this branch.
+        support_echo: tuple[float, float] | None = None
     else:
         stack = ChannelStack(effects, provider, seed=link_seed)
+        # LINK-7 (plan §1): the mission-level trigger/compatibility/
+        # certificate gate, derived from the static composed effect stack --
+        # never the realized sampled draw (R4).
+        support_echo = validate_source_uncertainty_gate(
+            effects, receiver.source_intensity_uncertainty
+        )
+    uncertain_source_active = support_echo is not None
+    # "accepted-but-unused, recorded" (plan §1): delta is forwarded into the
+    # per-block rate computation only when a genuinely uncertain source
+    # model is active; otherwise it is still recorded in the manifest
+    # (receiver.source_intensity_uncertainty below) but never changes the
+    # emitted rate.
+    source_intensity_uncertainty_for_blocks = (
+        receiver.source_intensity_uncertainty if uncertain_source_active else None
+    )
 
     union_registry: dict[str, object] = dict(stack.control_specs)
     for spec in receiver.controls(cfg.pulse_repetition_rate_hz):
@@ -497,17 +521,23 @@ def _simulate_pass_receiver_active(
 
     channel_states: list[ChannelState] = []
     receiver_inputs_list: list[ReceiverInputs] = []
+    source_truth_list: list[SourceTruthInputs] = []
     detector: DetectorParams | None = None
     for sample_index, (t, base_channel) in enumerate(
         zip(pass_geometry.time_s, base_channel_states)
     ):
         state = stack.evaluate(t, controls=stack_controls, sample_index=sample_index)
         inputs, residual = extract_receiver_inputs(state)
+        # LINK-7 §3.1 -- the second extraction stage, composed after
+        # extract_receiver_inputs (never before): the residual passed to
+        # apply_link_state below now has a fully-identity source partition.
+        source_truth, residual = extract_source_truth(residual)
         new_channel, new_detector = apply_link_state(
             residual, channel=base_channel, detector=base_detector
         )
         channel_states.append(new_channel)
         receiver_inputs_list.append(inputs)
+        source_truth_list.append(source_truth)
         if detector is None:
             detector = new_detector
         elif new_detector.detection_efficiency != detector.detection_efficiency:
@@ -539,10 +569,12 @@ def _simulate_pass_receiver_active(
         pulse_repetition_rate_hz=cfg.pulse_repetition_rate_hz,
         sky_condition=cfg.sky_condition,
         receiver_inputs_list=receiver_inputs_list,
+        source_truth_list=source_truth_list,
         gate_window_s=gate_window_s,
         filter_sigma_hz=filter_sigma_hz,
         doppler_residual_fraction=doppler_residual_fraction,
         source_linewidth_sigma_hz=receiver.source_linewidth_sigma_hz,
+        source_intensity_uncertainty=source_intensity_uncertainty_for_blocks,
         link_mode=link_mode,
         law_effect=law_effect,
         provider=provider,
@@ -558,6 +590,7 @@ def _simulate_pass_receiver_active(
         link_mode=link_mode,
         pdt_config=pdt_config,
         tau_mem_s=tau_mem_s,
+        source_support_echo=support_echo,
     )
 
     return _pass_result_from_profile(pass_geometry, profile, cfg, link_provenance=manifest_json)
@@ -574,10 +607,12 @@ def _simulate_profile_receiver(
     pulse_repetition_rate_hz: float,
     sky_condition: str,
     receiver_inputs_list: list[ReceiverInputs],
+    source_truth_list: list[SourceTruthInputs],
     gate_window_s: float | None,
     filter_sigma_hz: float | None,
     doppler_residual_fraction: float | None,
     source_linewidth_sigma_hz: float,
+    source_intensity_uncertainty: float | None,
     link_mode: str,
     law_effect,
     provider: TableGeometryProvider,
@@ -587,6 +622,11 @@ def _simulate_profile_receiver(
     Reuses the same werner_p/loss/fidelity helpers as the legacy profile
     core; only the per-sample key-rate computation is replaced by the §1/§5
     receiver chain (Appendix A -- every other emitted field is unchanged).
+
+    LINK-7 (plan §2, §6): ``source_truth_list`` carries each sample's
+    realized truth ``intensity_factor`` (one draw per estimation block, C4)
+    into the truth-statistics fold; ``source_intensity_uncertainty`` (when
+    not ``None``) activates the robust decoy-inversion path.
     """
 
     werner_p_source = _single_werner_source(channel_states)
@@ -597,7 +637,9 @@ def _simulate_profile_receiver(
 
     blocks = []
     if link_mode == "sampled":
-        for channel, inputs in zip(channel_states, receiver_inputs_list):
+        for channel, inputs, source_truth in zip(
+            channel_states, receiver_inputs_list, source_truth_list
+        ):
             blocks.append(
                 compute_receiver_block(
                     channel=channel,
@@ -611,10 +653,14 @@ def _simulate_profile_receiver(
                     filter_sigma_hz=filter_sigma_hz,
                     doppler_residual_fraction=doppler_residual_fraction,
                     source_linewidth_sigma_hz=source_linewidth_sigma_hz,
+                    intensity_factor=source_truth.intensity_factor,
+                    source_intensity_uncertainty=source_intensity_uncertainty,
                 )
             )
     else:
-        for t, channel, inputs in zip(axis_values, channel_states, receiver_inputs_list):
+        for t, channel, inputs, source_truth in zip(
+            axis_values, channel_states, receiver_inputs_list, source_truth_list
+        ):
             geom = provider.at(t)
             law = law_effect.stationary_law(geom)
             blocks.append(
@@ -631,6 +677,7 @@ def _simulate_profile_receiver(
                     filter_sigma_hz=filter_sigma_hz,
                     doppler_residual_fraction=doppler_residual_fraction,
                     source_linewidth_sigma_hz=source_linewidth_sigma_hz,
+                    intensity_factor=source_truth.intensity_factor,
                 )
             )
 

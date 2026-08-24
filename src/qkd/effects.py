@@ -762,6 +762,114 @@ class MuFluctuationEffect:
 
 
 @dataclass(frozen=True)
+class CalibratedSourceFactorEffect:
+    """Bounded, hard-containment-compatible source-intensity-factor owner (LINK-7, plan §4, R2-A).
+
+    **The R2-A vehicle (LINK-7 plan §1, §4 -- binding):** draws
+    ``intensity_factor ~ Uniform[1 - half_width, 1 + half_width]``,
+    ``0 <= half_width < 1``. Unlike :class:`MuFluctuationEffect` (unbounded
+    log-normal support, never hard-delta-consumable), this effect's declared
+    support is exactly the closed interval ``[1 - half_width, 1 +
+    half_width]`` -- registered verbatim in ``SOURCE_MODEL_SUPPORT`` below.
+    It is security-consumable under a LINK-7 hard containment certificate
+    ``delta`` iff ``half_width <= delta`` (``qkd.detection``'s
+    model-compatibility gate, plan §1 R2, R12.2).
+
+    ``half_width = 0`` is the identity-capable degenerate case:
+    ``rng.uniform(1.0, 1.0)`` deterministically returns exactly ``1.0`` --
+    consistent with :class:`MuFluctuationEffect`'s zero-variance
+    ``relative_sigma=0`` convention and with the LINK-7 plan §2 strict-``==``
+    identity reduction at ``delta = 0``.
+
+    Domain: ``half_width`` finite, in ``[0, 1)`` (validated at construction).
+    No geometry requirement.
+
+    **Indexing contract (plan §3, binding):** identical in shape to
+    :class:`MuFluctuationEffect` -- :meth:`evaluate` requires an explicit
+    ``context.sample_index`` (raises, naming ``sample_index``, *before*
+    drawing) and calls ``context.rng_for("source_factor")`` with no index
+    argument, letting the stack-owned context supply the
+    already-validated index.
+
+    Declares ``unit_mean_fading_fields = {"intensity_factor"}`` (LINK-5
+    plan §1.4, mirrored here): at :class:`~qkd.link.ChannelStack`
+    construction this relaxes that field's validation, for this effect
+    only, from ``[0, 1]`` to finite and ``>= 0`` -- the factor is > 1 for
+    roughly half of all nonzero-``half_width`` draws.
+
+    Not in the production stack; a receiver-active ``simulate_pass`` call
+    with a LINK-7 ``source_intensity_uncertainty`` certificate consumes
+    this field via ``qkd.detection.extract_source_truth`` and the LINK-7
+    robust decoy-inversion path (``qkd.detection.compute_robust_secure_key_rate``).
+    """
+
+    half_width: float
+    effect_id: str = field(default="calibrated_source_factor", init=False)
+    unit_mean_fading_fields: frozenset[str] = field(
+        default=frozenset({"intensity_factor"}), init=False
+    )
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.half_width) or not (0.0 <= self.half_width < 1.0):
+            raise ValueError(
+                f"half_width must be finite and in [0, 1); got {self.half_width!r}."
+            )
+
+    def evaluate(
+        self, t: float, geom: PassGeometry, *, context: EffectEvaluationContext
+    ) -> LinkObservables:
+        if context.sample_index is None:
+            raise ValueError(
+                "CalibratedSourceFactorEffect.evaluate: context.sample_index is "
+                "None; this effect requires an explicit sample_index (LINK-4 "
+                "indexing contract, plan §3) -- without it, the runtime "
+                "would resolve the same RNG stream every call and silently "
+                "repeat one draw across all geometries."
+            )
+        rng = context.rng_for("source_factor")
+        intensity_factor = rng.uniform(1.0 - self.half_width, 1.0 + self.half_width)
+        intensity_factor = float(intensity_factor)
+        if not math.isfinite(intensity_factor):
+            raise ValueError(
+                "CalibratedSourceFactorEffect.evaluate: sampled intensity_factor="
+                f"{intensity_factor!r} is not finite; refusing to emit a "
+                "non-finite observable."
+            )
+        return LinkObservables(source=SourceObservables(intensity_factor=intensity_factor))
+
+
+SOURCE_MODEL_SUPPORT: dict[str, "object"] = {
+    "mu_fluctuation": lambda effect: None,
+    "calibrated_source_factor": lambda effect: (
+        1.0 - effect.half_width,
+        1.0 + effect.half_width,
+    ),
+}
+"""LINK-7 plan §1 (R12.2) -- the code/registry-derived hard-containment support
+declaration, keyed by ``effect_id``.
+
+**Code/registry-derived only (R12.2, binding):** this mapping is the sole
+source of truth for what support an active source-effect contributor
+declares; a replay manifest may only *echo* a support value it recomputes
+from this same registry (``qkd.replay``'s ``source_support_echo``) -- it is
+never itself trusted to satisfy the gate.
+
+Each value is a callable ``(effect_instance) -> (lo, hi) | None``:
+``None`` means the effect's declared support is unbounded (never
+hard-delta-consumable, regardless of its constructed parameters --
+:class:`MuFluctuationEffect` is a log-normal model by *class*, so its
+declared support is unbounded even at ``relative_sigma=0``, deliberately
+not instance-inspected); a ``(lo, hi)`` pair is the effect's declared
+closed-interval support, evaluated from its own constructor parameters
+(:class:`CalibratedSourceFactorEffect`'s ``[1 - half_width, 1 +
+half_width]``). ``qkd.detection.validate_source_uncertainty_gate`` composes
+these (product of intervals, LINK-5 plan §1.4 composition rule) across
+every active registered contributor and checks hard containment in
+``Kδ = [1 - delta, 1 + delta]``.
+"""
+
+
+@dataclass(frozen=True)
 class DetectorAfterpulsingEffect:
     """Nominal/calibrated conditional afterpulse-probability parameter owner (LINK-5, plan §2.2).
 

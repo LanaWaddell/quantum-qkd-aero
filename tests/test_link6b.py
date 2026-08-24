@@ -159,11 +159,12 @@ def test_pregate0_v1_fixture_satisfies_both_replay_safeguards():
     current_payload = _build_results(replayed, plot_path="x.png")
     expected_payload = json.loads(V1_EXPECTED_PATH.read_text(encoding="utf-8"))
     # run_metadata.link_provenance legitimately changes on replay -- the
-    # reader re-emits a fresh v2 manifest string (not the stored historical
-    # v1 string), so this one field is popped after asserting the intended
-    # re-emission semantics (manifest_version bumped to 2).
+    # reader re-emits a fresh manifest string (not the stored historical v1
+    # string), so this one field is popped after asserting the intended
+    # re-emission semantics (manifest_version now bumped to 3, LINK-7 §13
+    # addendum: authorized consumption path).
     assert (
-        json.loads(current_payload["run_metadata"]["link_provenance"])["manifest_version"] == 2
+        json.loads(current_payload["run_metadata"]["link_provenance"])["manifest_version"] == 3
     )
     current_payload["run_metadata"].pop("link_provenance", None)
     expected_payload["run_metadata"].pop("link_provenance", None)
@@ -1016,7 +1017,10 @@ def test_manifest_v2_round_trip_byte_identical_sampled():
         },
     )
     manifest = json.loads(result.link_provenance)
-    assert manifest["manifest_version"] == 2
+    # LINK-7 §13 addendum: authorized consumption path -- the live path now
+    # emits v3/"link-7.1", not v2 (same pattern LINK-6b applied to the
+    # LINK-6a-era assertions).
+    assert manifest["manifest_version"] == 3
     assert manifest["pipeline_version"] == LINK_PIPELINE_VERSION
     assert manifest["receiver"]["source_linewidth_sigma_hz"] == 1e8
 

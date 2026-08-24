@@ -15,8 +15,9 @@ here verbatim in code; do not "fix" or retune any constant -- see the plan's
 
 from __future__ import annotations
 
+import heapq
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -24,11 +25,11 @@ import numpy as np
 from qkd.bb84 import (
     _relative_y1_shortfall,
     estimate_decoy_bounds,
-    run_decoy_bb84,
+    expected_block_statistics,
     secure_key_rate,
 )
-from qkd.effects import LogNormalLaw
-from qkd.link import ChannelEffect, ControlSpec, EffectiveLinkState
+from qkd.effects import LogNormalLaw, SOURCE_MODEL_SUPPORT
+from qkd.link import ChannelEffect, ControlSpec, EffectiveLinkState, SourceObservables
 from qkd.signals import ChannelState, DetectorParams
 
 
@@ -48,6 +49,14 @@ PDT_BLOCK_BINDING_REL_TOL = 1e-6
 MIN_FILTER_SIGMA_HZ = 1e3
 MAX_FILTER_SIGMA_HZ = 1e15
 JITTER_LEAK_TOLERANCE = 1e-9
+
+# LINK-7 (docs/LINK_7_PLAN.md §2, D4) -- the certified minimizer's declared
+# absolute overstatement gap, pinned. R12.1 emission rule:
+# R_certified = max(0, R_hat - epsilon), epsilon <= ROBUST_RATE_CERT_GAP.
+ROBUST_RATE_CERT_GAP = 1e-12
+PIYAVSKII_LIPSCHITZ_SAFETY_FACTOR = 4.0
+PIYAVSKII_LIPSCHITZ_PROBE_POINTS = 4001
+PIYAVSKII_MAX_ITERATIONS = 2_000_000
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +143,48 @@ class PdtNodeUnphysicalError(DetectionError):
     """Raised when any quadrature node has ``eta_base * f_i > 1`` (§5, R2 -- no node is ever clipped)."""
 
 
+class SourceUncertaintyRequiredError(DetectionError):
+    """Raised when an uncertain source model is active but
+    ``source_intensity_uncertainty`` is absent (LINK-7 plan §1, R4).
+
+    The trigger is the **active source model/configuration** -- never the
+    realized sampled draw (checking ``k != 1`` to decide would itself
+    consume latent truth).
+    """
+
+
+class SourceModelIncompatibleError(DetectionError):
+    """Raised when an active source contributor's registered support is not
+    contained in ``Kδ`` (LINK-7 plan §1, R2/R2-A -- composed product
+    support, conservative). Also raised for any active contributor whose
+    declared support is unbounded (e.g. :class:`~qkd.effects.MuFluctuationEffect`),
+    regardless of ``delta``, including ``delta == 0``."""
+
+
+class SourceCertificateViolationError(DetectionError):
+    """Raised for ``delta == 0`` with a non-identity-capable (but otherwise
+    boundable) active source model (LINK-7 plan §1, R4 / Echo answer 3) --
+    an inconsistent configuration that fails loudly outside the estimator."""
+
+
+class RobustRateCertificationError(DetectionError):
+    """Raised when the Piyavskii-Shubert minimizer cannot certify a minimum
+    of the candidate rate on ``Kδ`` within its iteration budget (LINK-7 plan
+    §2, D4).
+
+    This is a **certification-failure signal, never a silent fallback**:
+    :func:`piyavskii_shubert_minimize` never returns an uncertified
+    ``epsilon`` and never substitutes an uncertified estimate (e.g. a bare
+    grid minimum) for the certified one. A discovered trigger: certain
+    (gains, qber, mu, nu, delta) configurations whose candidate-rate curve
+    is clamped at :func:`~qkd.bb84.secure_key_rate`'s zero floor over a wide
+    sub-interval *and* whose ``Kδ`` domain also spans the transition kink
+    into that floor can require far more subdivision than
+    ``PIYAVSKII_MAX_ITERATIONS`` allows to certify ``ROBUST_RATE_CERT_GAP``
+    -- this is a real, reproducible risk for some receiver configurations,
+    not merely a theoretical one (see the LINK-7 implementation report)."""
+
+
 # ---------------------------------------------------------------------------
 # §5 -- PDT admissibility allowlist (closed-world, by stable effect_id)
 # ---------------------------------------------------------------------------
@@ -183,11 +234,22 @@ class ReceiverModel:
     **receiver-assumed** source parameter, default ``0.0``, validated finite
     and ``>= 0`` -- a placeholder home until the source partition's own
     consumption PR makes a ``SourceObservables`` field the right owner.
+
+    ``source_intensity_uncertainty`` (LINK-7 plan §1, R4) is the hard
+    calibration certificate ``delta`` -- an **estimator/source-
+    characterization assumption**, not a control -- asserting certified
+    containment ``k in [1 - delta, 1 + delta]`` for the block. Default
+    ``None`` (no certificate declared); when supplied, must be finite and
+    in ``[0, 1)``. Required exactly when an uncertain source model is
+    active (LINK-7 plan §1 R4 trigger; ``qkd.detection.
+    validate_source_uncertainty_gate``); accepted-but-unused-and-recorded
+    when supplied on an identity/no-source-model run.
     """
 
     pi: tuple[float, float, float]
     operating_convention: str = "next_live_gate_v1"
     source_linewidth_sigma_hz: float = 0.0
+    source_intensity_uncertainty: float | None = None
 
     def __post_init__(self) -> None:
         if len(self.pi) != 3:
@@ -219,6 +281,13 @@ class ReceiverModel:
                 "source_linewidth_sigma_hz must be finite and >= 0; got "
                 f"{self.source_linewidth_sigma_hz!r}."
             )
+        if self.source_intensity_uncertainty is not None:
+            delta = self.source_intensity_uncertainty
+            if not math.isfinite(delta) or not (0.0 <= delta < 1.0):
+                raise ReceiverConfigError(
+                    "source_intensity_uncertainty must be None or finite and "
+                    f"in [0, 1); got {delta!r}."
+                )
 
     @property
     def pi_signal(self) -> float:
@@ -342,6 +411,45 @@ def extract_receiver_inputs(
 
 
 # ---------------------------------------------------------------------------
+# LINK-7 §3.1 -- SourceTruthInputs / extract_source_truth (two-stage extraction)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SourceTruthInputs:
+    """The one **truth-side** consumed field (LINK-7 plan §3.1).
+
+    This is deliberately not a member of :class:`ReceiverInputs` (which
+    stays exactly seven estimator-consumable fields, unchanged): a value of
+    this type may reach only the statistics-only truth generator
+    (``qkd.bb84.expected_block_statistics``), never a decoy-inversion
+    function (``qkd.bb84.estimate_decoy_bounds`` /
+    ``qkd.bb84.secure_key_rate`` / ``qkd.detection.compute_robust_secure_key_rate``).
+    """
+
+    intensity_factor: float = 1.0
+
+
+def extract_source_truth(
+    state: EffectiveLinkState,
+) -> tuple[SourceTruthInputs, EffectiveLinkState]:
+    """Split ``state`` into the source-truth-consumed field and the residual
+    (LINK-7 plan §3.1 -- the second stage of the two-stage extraction).
+
+    Composed at mission level **after** :func:`extract_receiver_inputs`
+    (never before): the residual this function returns has a fully-identity
+    source partition, so ``qkd.link.apply_link_state`` rejects nothing
+    non-identity on a receiver-active LINK-7 run (the full-consumption
+    test). ``ReceiverInputs``/``extract_receiver_inputs`` are unchanged by
+    this addition -- the 6a exact-consumed-set test needs no edit.
+    """
+
+    truth = SourceTruthInputs(intensity_factor=state.source.intensity_factor)
+    residual = replace(state, source=SourceObservables())
+    return truth, residual
+
+
+# ---------------------------------------------------------------------------
 # §1.5 -- ReceiverBlockResult (A.3.1, all fields required)
 # ---------------------------------------------------------------------------
 
@@ -369,6 +477,13 @@ class ReceiverBlockResult:
     eta_gate: float
     eta_filter: float
     e_d_eff: float
+    # LINK-7 (plan §2, R12.1): populated only when robust decoy inversion is
+    # active for this block (a certified source_intensity_uncertainty is in
+    # effect); ``None`` on every other block, including every pre-LINK-7
+    # path (byte-identical default).
+    source_robust_k_star: float | None = None
+    source_robust_r_hat: float | None = None
+    source_robust_epsilon: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -639,6 +754,396 @@ def click_availability(
 
 
 # ---------------------------------------------------------------------------
+# LINK-7 §1 -- model-compatibility gate (R2/R2-A, R12.2 -- code/registry-
+# derived, never manifest-trusted)
+# ---------------------------------------------------------------------------
+
+
+def active_source_effect_ids(effects: Sequence[ChannelEffect]) -> tuple[str, ...]:
+    """The subset of ``effects`` whose ``effect_id`` is a registered source
+    contributor (LINK-7 plan §1, §4) -- ``qkd.effects.SOURCE_MODEL_SUPPORT``
+    is the single registry of what counts."""
+
+    return tuple(effect.effect_id for effect in effects if effect.effect_id in SOURCE_MODEL_SUPPORT)
+
+
+def validate_source_uncertainty_gate(
+    effects: Sequence[ChannelEffect],
+    source_intensity_uncertainty: float | None,
+) -> tuple[float, float] | None:
+    """The LINK-7 mission-level trigger/compatibility/certificate gate (plan §1).
+
+    ``effects`` is the **static, composed effect stack** -- the trigger is
+    the active model/configuration, never a realized sampled draw (R4).
+    Returns the composed product support ``(lo, hi)`` of every active
+    registered source contributor (LINK-5 plan §1.4 product-composition
+    rule, applied conservatively here), or ``None`` when no source
+    contributor is active (identity path; ``source_intensity_uncertainty``
+    is then accepted-but-unused if supplied).
+
+    Raises :class:`SourceUncertaintyRequiredError` when a source model is
+    active and ``source_intensity_uncertainty`` is ``None``;
+    :class:`SourceModelIncompatibleError` when any active contributor's
+    registered support is unbounded, or the composed support is not
+    contained in ``Kδ = [1 - delta, 1 + delta]`` for ``delta > 0``;
+    :class:`SourceCertificateViolationError` for ``delta == 0`` with a
+    bounded-but-non-identity active model (composed support is not the
+    identity singleton ``{1.0}``).
+    """
+
+    active_ids = active_source_effect_ids(effects)
+    if not active_ids:
+        return None
+
+    if source_intensity_uncertainty is None:
+        raise SourceUncertaintyRequiredError(
+            "An uncertain source model is active "
+            f"({sorted(set(active_ids))!r}) but ReceiverModel."
+            "source_intensity_uncertainty is None; a hard calibration "
+            "certificate is required whenever the active source model/"
+            "configuration is uncertain (LINK-7 plan §1, R4) -- this trigger "
+            "never depends on the realized sampled draw."
+        )
+    delta = source_intensity_uncertainty
+
+    by_id = {}
+    for effect in effects:
+        if effect.effect_id in SOURCE_MODEL_SUPPORT:
+            by_id.setdefault(effect.effect_id, effect)
+
+    lo = 1.0
+    hi = 1.0
+    for effect_id in active_ids:
+        effect = by_id[effect_id]
+        support = SOURCE_MODEL_SUPPORT[effect_id](effect)
+        if support is None:
+            raise SourceModelIncompatibleError(
+                f"Effect {effect_id!r} has registered-unbounded support and "
+                "is not security-consumable under a LINK-7 hard containment "
+                "certificate, regardless of delta (plan §1, R2/R2-A -- "
+                "e.g. MuFluctuationEffect remains a stress/noise model only)."
+            )
+        s_lo, s_hi = support
+        lo *= s_lo
+        hi *= s_hi
+
+    if delta == 0.0:
+        if lo != 1.0 or hi != 1.0:
+            raise SourceCertificateViolationError(
+                f"delta == 0 with a non-identity-capable active source model "
+                f"(composed declared support [{lo!r}, {hi!r}] != [1.0, 1.0]); "
+                "this is an inconsistent configuration (LINK-7 plan §1, R4 / "
+                "Echo answer 3)."
+            )
+    else:
+        if lo < 1.0 - delta or hi > 1.0 + delta:
+            raise SourceModelIncompatibleError(
+                f"Composed active source support [{lo!r}, {hi!r}] is not "
+                f"contained in Kδ=[{1.0 - delta!r}, {1.0 + delta!r}] "
+                "(LINK-7 plan §1, R2/R2-A hard containment)."
+            )
+
+    return (lo, hi)
+
+
+# ---------------------------------------------------------------------------
+# LINK-7 §2 -- robust decoy inversion (complete candidate rate, single
+# witness) and the certified Piyavskii-Shubert minimizer (D4)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RobustRateResult:
+    """The LINK-7 §2 robust-rate result: witness diagnostics plus the
+    certified emission triple (``r_hat``, ``epsilon``, ``r_certified``)."""
+
+    k_star: float
+    y1_lower_bound: float
+    e1_upper_bound: float
+    q1: float
+    r_hat: float
+    epsilon: float
+    r_certified: float
+
+
+def compute_robust_secure_key_rate(
+    *,
+    gains: Mapping[str, float],
+    qber_per_intensity: Mapping[str, float],
+    mu: float,
+    nu: float,
+    delta: float,
+    q: float = 0.5,
+    error_correction_efficiency: float = 1.16,
+) -> RobustRateResult:
+    """LINK-7 plan §2 -- the complete candidate rate, robustified over ``Kδ``.
+
+    Observed ``gains``/``qber_per_intensity`` (the four-entry
+    signal/decoy/vacuum block statistics) are held fixed; the candidate
+    source factor ``k'`` only ever enters the intensities passed to
+    :func:`~qkd.bb84.estimate_decoy_bounds` -- the v1 omission the plan
+    corrects: ``q1`` is intensity-dependent, ``q1_L(k') = Y1_L(k') * k'mu *
+    exp(-k'mu)``. ``R(k') = secure_key_rate(Q_signal_obs, E_signal_obs,
+    q1_L(k'), e1_U(k'), ...)``; ``R_robust = min over k' in Kδ``. All three
+    reported diagnostics (``Y1``, ``e1``, ``q1``) come from the single
+    minimizing witness ``k*`` (R1 witness rule) -- never mixed extrema.
+
+    **Emission rule (R12.1):** the certified claim is ``R_certified =
+    max(0, R_hat - epsilon)`` with ``epsilon <= ROBUST_RATE_CERT_GAP`` --
+    never above the true interval minimum.
+
+    ``delta == 0`` is an exact identity short-circuit: evaluates only at
+    ``k = 1.0`` (bit-identical to the nominal, non-robust inversion; no
+    minimizer search).
+    """
+
+    if not math.isfinite(delta) or not (0.0 <= delta < 1.0):
+        raise ValueError(f"delta must be finite and in [0, 1); got {delta!r}.")
+
+    signal_gain = gains["signal"]
+    signal_qber = qber_per_intensity["signal"]
+
+    def _candidate(k: float) -> tuple[float, float, float, float]:
+        mu_p = k * mu
+        nu_p = k * nu
+        y1, e1 = estimate_decoy_bounds(
+            gains, qber_per_intensity, {"signal": mu_p, "decoy": nu_p, "vacuum": 0.0}
+        )
+        q1 = y1 * mu_p * math.exp(-mu_p)
+        r = secure_key_rate(
+            signal_gain,
+            signal_qber,
+            q1,
+            e1,
+            q=q,
+            error_correction_efficiency=error_correction_efficiency,
+        )
+        return y1, e1, q1, r
+
+    if delta == 0.0:
+        y1, e1, q1, r = _candidate(1.0)
+        return RobustRateResult(
+            k_star=1.0,
+            y1_lower_bound=y1,
+            e1_upper_bound=e1,
+            q1=q1,
+            r_hat=r,
+            epsilon=0.0,
+            r_certified=r,
+        )
+
+    def _rate_only(k: float) -> float:
+        return _candidate(k)[3]
+
+    k_star, r_hat, epsilon = piyavskii_shubert_minimize(
+        _rate_only, 1.0 - delta, 1.0 + delta, gap=ROBUST_RATE_CERT_GAP
+    )
+    y1, e1, q1, _r_check = _candidate(k_star)
+    r_certified = max(0.0, r_hat - epsilon)
+
+    return RobustRateResult(
+        k_star=k_star,
+        y1_lower_bound=y1,
+        e1_upper_bound=e1,
+        q1=q1,
+        r_hat=r_hat,
+        epsilon=epsilon,
+        r_certified=r_certified,
+    )
+
+
+def _lipschitz_over_estimate(
+    f: Callable[[float], float],
+    a: float,
+    b: float,
+    *,
+    n_probe: int,
+    safety_factor: float,
+) -> float:
+    """A documented over-estimate of ``f``'s Lipschitz constant on ``[a, b]``
+    (LINK-7 plan §2, R5/D4).
+
+    The composite decoy/GLLP rate expression this minimizer is applied to
+    (a rational function of exponentials, nested inside a quotient and a
+    binary-entropy composition) is analytically intractable to hand-bound
+    without a real risk of an undetected algebra error silently
+    invalidating the certificate. This helper instead probes ``f``'s own
+    closed form on a dense grid over the pinned operating domain
+    (``n_probe`` points -- the same order as the plan's own 432-configuration,
+    4001-point dense-sweep evidence, §2), takes the largest observed secant
+    slope, and inflates it by ``safety_factor``. This is not trusted on
+    faith: :func:`piyavskii_shubert_minimize` additionally verifies, online,
+    that every sampled point pair during the actual search is consistent
+    with the returned bound -- doubling it and restarting whenever it is
+    not -- so the final certificate is checked against every point the
+    search actually evaluates, not merely the probe grid.
+    """
+
+    if b <= a:
+        return 1.0
+    max_slope = 0.0
+    prev_x = a
+    prev_f = f(a)
+    for i in range(1, n_probe):
+        x = a + (b - a) * i / (n_probe - 1)
+        fx = f(x)
+        dx = x - prev_x
+        if dx > 0.0:
+            slope = abs(fx - prev_f) / dx
+            if slope > max_slope:
+                max_slope = slope
+        prev_x, prev_f = x, fx
+    if max_slope <= 0.0:
+        max_slope = 1e-15
+    return max_slope * safety_factor
+
+
+def _piyavskii_shubert_search(
+    f: Callable[[float], float],
+    a: float,
+    b: float,
+    *,
+    gap: float,
+    lipschitz: float,
+    max_iterations: int,
+) -> tuple[float, float, float] | None:
+    """One Piyavskii-Shubert search pass at a fixed Lipschitz constant.
+
+    A min-heap of interval "characteristics" (``O(log n)`` per iteration,
+    not a linear rescan) drives the search: each popped interval is either
+    the current global-lower-bound minimizer (search terminates) or gets
+    replaced by its two children. A candidate that would clamp exactly to
+    an interval endpoint (only possible when ``lipschitz`` is a very loose
+    over-estimate of the true local slope there) falls back to the
+    interval's midpoint instead, guaranteeing every expansion strictly
+    shrinks its interval -- geometric convergence regardless of how loose
+    the supplied Lipschitz constant is.
+
+    Returns ``(x_star, f_star, epsilon)`` on success -- ``f_star`` is the
+    best sampled value (``R_hat``), ``epsilon <= gap`` is the certified gap
+    to a Lipschitz-consistent global lower bound (the true minimum lies in
+    ``[f_star - epsilon, f_star]``) -- or ``None`` if a sampled point pair
+    violates ``lipschitz`` (signalling the caller to double it and retry;
+    LINK-7 plan §2, D4).
+
+    Raises :class:`RobustRateCertificationError` -- never a bare
+    ``RuntimeError`` -- if ``max_iterations`` is exhausted without
+    certifying ``gap``; the message carries the iteration count, the best
+    sampled value found so far (``R_hat``), and the achieved (uncertified)
+    gap at exhaustion, so a caller sees exactly how close certification got,
+    not just that it failed.
+    """
+
+    tol = 1e-15 * max(1.0, lipschitz * (b - a))
+    fa = f(a)
+    fb = f(b)
+    best_x, best_f = (a, fa) if fa <= fb else (b, fb)
+
+    heap: list[tuple[float, float, float, float, float]] = []
+
+    def _push(x_i: float, f_i: float, x_j: float, f_j: float) -> None:
+        dx = x_j - x_i
+        if dx <= 0.0:
+            return
+        glb = 0.5 * (f_i + f_j) - 0.5 * lipschitz * dx
+        heapq.heappush(heap, (glb, x_i, f_i, x_j, f_j))
+
+    _push(a, fa, b, fb)
+
+    achieved_epsilon = math.inf
+    for _iteration in range(max_iterations):
+        if not heap:
+            return best_x, best_f, 0.0
+        glb, x_i, f_i, x_j, f_j = heapq.heappop(heap)
+
+        epsilon = best_f - glb
+        achieved_epsilon = epsilon
+        if epsilon <= gap:
+            return best_x, best_f, max(epsilon, 0.0)
+
+        cand = 0.5 * (x_i + x_j) - (f_j - f_i) / (2.0 * lipschitz)
+        cand = min(max(cand, x_i), x_j)
+        if cand <= x_i or cand >= x_j:
+            cand = 0.5 * (x_i + x_j)
+        new_f = f(cand)
+
+        if (
+            abs(new_f - f_i) > lipschitz * (cand - x_i) + tol
+            or abs(new_f - f_j) > lipschitz * (x_j - cand) + tol
+        ):
+            return None
+
+        if new_f < best_f:
+            best_f = new_f
+            best_x = cand
+        _push(x_i, f_i, cand, new_f)
+        _push(cand, new_f, x_j, f_j)
+
+    raise RobustRateCertificationError(
+        f"Piyavskii-Shubert search did not converge to gap={gap!r} within "
+        f"max_iterations={max_iterations}; best sampled value (R_hat) found "
+        f"so far was {best_f!r}, with an achieved (uncertified) gap of "
+        f"{achieved_epsilon!r} at exhaustion (LINK-7 plan §2, D4). This is a "
+        "certification-failure signal -- no uncertified estimate is ever "
+        "substituted for the certified one."
+    )
+
+
+def piyavskii_shubert_minimize(
+    f: Callable[[float], float],
+    a: float,
+    b: float,
+    *,
+    gap: float,
+    safety_factor: float = PIYAVSKII_LIPSCHITZ_SAFETY_FACTOR,
+    n_probe: int = PIYAVSKII_LIPSCHITZ_PROBE_POINTS,
+    max_iterations: int = PIYAVSKII_MAX_ITERATIONS,
+) -> tuple[float, float, float]:
+    """Certified global minimization of ``f`` over ``[a, b]`` (LINK-7 plan §2, R5/D4).
+
+    A Piyavskii-Shubert saw-tooth-envelope search: a deterministic,
+    globally-certifying one-dimensional minimizer (no SciPy, no
+    endpoints-only assumption, no uncertified grid used as the production
+    mechanism). Returns ``(x_star, f_star, epsilon)`` with ``epsilon <=
+    gap``: ``f_star`` is the best sampled candidate value; ``epsilon``
+    bounds how far ``f_star`` can be above the true minimum of ``f`` on
+    ``[a, b]``, given the (online-verified) Lipschitz constant used.
+
+    ``a == b`` is a degenerate single-point domain: returns ``(a, f(a),
+    0.0)`` directly, no search.
+
+    Raises :class:`RobustRateCertificationError` -- never a bare
+    ``RuntimeError`` -- if certification cannot be achieved: either the
+    Lipschitz over-estimate keeps being violated after repeated doubling, or
+    (propagated from :func:`_piyavskii_shubert_search`) ``max_iterations``
+    is exhausted before ``gap`` is certified. Both are certification-failure
+    signals; neither is ever silently downgraded to an uncertified result.
+    """
+
+    if b < a:
+        raise ValueError(f"b must be >= a; got a={a!r}, b={b!r}.")
+    if gap <= 0.0:
+        raise ValueError(f"gap must be > 0; got {gap!r}.")
+    if b == a:
+        return a, f(a), 0.0
+
+    lipschitz = _lipschitz_over_estimate(f, a, b, n_probe=n_probe, safety_factor=safety_factor)
+
+    for _restart in range(64):
+        result = _piyavskii_shubert_search(
+            f, a, b, gap=gap, lipschitz=lipschitz, max_iterations=max_iterations
+        )
+        if result is not None:
+            return result
+        lipschitz *= 2.0
+
+    raise RobustRateCertificationError(
+        "piyavskii_shubert_minimize: failed to certify a Lipschitz-consistent "
+        f"minimum for f on [{a}, {b}] after repeated doubling (LINK-7 plan §2, D4)."
+    )
+
+
+# ---------------------------------------------------------------------------
 # §1 -- sampled-mode per-block receiver chain
 # ---------------------------------------------------------------------------
 
@@ -657,12 +1162,22 @@ def compute_receiver_block(
     filter_sigma_hz: float | None = None,
     doppler_residual_fraction: float | None = None,
     source_linewidth_sigma_hz: float = 0.0,
+    intensity_factor: float = 1.0,
+    source_intensity_uncertainty: float | None = None,
 ) -> ReceiverBlockResult:
     """The complete §1 receiver chain for one sampled block (base-statistics reuse route, C3).
 
     LINK-6b (plan §1, §3): the gate/filter/misalignment channel-copy fold is
     applied **before** the base-statistics call, so ``p_bg``/``p_dk``/
     ``p_noise`` and the base ``Q_vacuum`` are unaffected (signal-only fold).
+
+    LINK-7 (plan §2, §4, §6): ``intensity_factor`` is the realized **truth**
+    source factor (``qkd.detection.SourceTruthInputs``, default ``1.0``
+    identity) -- it folds only into the *truth-statistics* intensities
+    passed to ``qkd.bb84.expected_block_statistics`` (never into
+    ``intensities``, the nominal settings the estimator sees below).
+    ``source_intensity_uncertainty`` (``delta``), when not ``None``,
+    activates the LINK-7 robust decoy inversion in :func:`_finish_receiver_block`.
     """
 
     y0 = detector.dark_count_prob
@@ -682,10 +1197,15 @@ def compute_receiver_block(
         doppler_residual_fraction=doppler_residual_fraction,
         source_linewidth_sigma_hz=source_linewidth_sigma_hz,
     )
-    base = run_decoy_bb84(channel_eff, intensities, n_pulses, detector_eff, eve=None, q=q)
+    realized_intensities = {
+        name: intensity_factor * value for name, value in intensities.items()
+    }
+    gains, qber_per_intensity = expected_block_statistics(
+        channel_eff, realized_intensities, detector_eff
+    )
 
     q_prime, e_prime, _t_prime, a, _q_bar, q_bar_reg = shared_history_afterpulse(
-        base.gains, base.qber_per_intensity, pi, receiver_inputs.afterpulse_prob
+        gains, qber_per_intensity, pi, receiver_inputs.afterpulse_prob
     )
     r_click, availability = click_availability(
         pulse_repetition_rate_hz, q_bar_reg, receiver_inputs.dead_time_s
@@ -709,6 +1229,7 @@ def compute_receiver_block(
         eta_gate=eta_gate,
         eta_filter=eta_filter,
         e_d_eff=e_d_eff,
+        source_intensity_uncertainty=source_intensity_uncertainty,
     )
 
 
@@ -731,24 +1252,59 @@ def _finish_receiver_block(
     eta_gate: float = 1.0,
     eta_filter: float = 1.0,
     e_d_eff: float = 0.0,
+    source_intensity_uncertainty: float | None = None,
 ) -> ReceiverBlockResult:
-    """Shared estimator-call tail for both sampled and PDT block results (plan §1.2/§1.5, §5)."""
+    """Shared estimator-call tail for both sampled and PDT block results (plan §1.2/§1.5, §5).
 
-    y1_lower_bound, e1_upper_bound = estimate_decoy_bounds(
-        gains=dict(q_prime), qber_per_intensity=dict(e_prime), intensities=intensities
-    )
+    LINK-7 (plan §2): when ``source_intensity_uncertainty`` (``delta``) is
+    not ``None``, the nominal single-shot inversion below is replaced by
+    the robust decoy inversion (:func:`compute_robust_secure_key_rate`) --
+    ``delta is None`` (the default) is byte-identical to the pre-LINK-7
+    code path (no decoy-inversion call is even routed through the robust
+    helper). ``intensities`` here is always the *nominal* (mu, nu, 0)
+    setting -- never the realized truth intensities -- so no
+    decoy-inversion function ever receives realized k (plan §3).
+    """
+
     mu = intensities["signal"]
-    q1 = y1_lower_bound * mu * math.exp(-mu)
+    nu = intensities["decoy"]
     pi_signal = pi[0]
 
-    rate_signal = secure_key_rate(
-        q_prime["signal"],
-        e_prime["signal"],
-        q1,
-        e1_upper_bound,
-        q=q,
-        error_correction_efficiency=detector.error_correction_efficiency,
-    )
+    source_robust_k_star: float | None = None
+    source_robust_r_hat: float | None = None
+    source_robust_epsilon: float | None = None
+
+    if source_intensity_uncertainty is None:
+        y1_lower_bound, e1_upper_bound = estimate_decoy_bounds(
+            gains=dict(q_prime), qber_per_intensity=dict(e_prime), intensities=intensities
+        )
+        q1 = y1_lower_bound * mu * math.exp(-mu)
+        rate_signal = secure_key_rate(
+            q_prime["signal"],
+            e_prime["signal"],
+            q1,
+            e1_upper_bound,
+            q=q,
+            error_correction_efficiency=detector.error_correction_efficiency,
+        )
+    else:
+        robust = compute_robust_secure_key_rate(
+            gains=dict(q_prime),
+            qber_per_intensity=dict(e_prime),
+            mu=mu,
+            nu=nu,
+            delta=source_intensity_uncertainty,
+            q=q,
+            error_correction_efficiency=detector.error_correction_efficiency,
+        )
+        y1_lower_bound = robust.y1_lower_bound
+        e1_upper_bound = robust.e1_upper_bound
+        q1 = robust.q1
+        rate_signal = robust.r_certified
+        source_robust_k_star = robust.k_star
+        source_robust_r_hat = robust.r_hat
+        source_robust_epsilon = robust.epsilon
+
     rate_per_signal_pulse = availability * rate_signal
     rate_per_pulse = pi_signal * rate_per_signal_pulse
     sifted_key_length = round(n_pulses * pi_signal * q * availability * q_prime["signal"])
@@ -774,6 +1330,9 @@ def _finish_receiver_block(
         eta_gate=eta_gate,
         eta_filter=eta_filter,
         e_d_eff=e_d_eff,
+        source_robust_k_star=source_robust_k_star,
+        source_robust_r_hat=source_robust_r_hat,
+        source_robust_epsilon=source_robust_epsilon,
     )
 
 
@@ -992,6 +1551,7 @@ def compute_receiver_block_pdt(
     filter_sigma_hz: float | None = None,
     doppler_residual_fraction: float | None = None,
     source_linewidth_sigma_hz: float = 0.0,
+    intensity_factor: float = 1.0,
 ) -> ReceiverBlockResult:
     """The five-step deterministic-prefix PDT block (plan §5, C2).
 
@@ -1003,6 +1563,18 @@ def compute_receiver_block_pdt(
     physical node state ``eta_base_folded * f_i`` (never calling the law
     effect's ``evaluate``), and the estimator consumes the
     availability-weighted observed-statistics ratios (plan §5 ratios block).
+
+    LINK-7 (plan §10-D2, Option B -- source-active PDT deferred):
+    ``intensity_factor`` defaults to ``1.0`` (identity) and is, in
+    practice, always exactly ``1.0`` here -- no registered source effect
+    can ever reach the PDT prefix stack (``PDT_ADMISSIBLE_EFFECTS`` has no
+    ``mu_fluctuation``/``calibrated_source_factor`` member, so
+    ``classify_and_order_pdt_stack`` already rejects any attempt before
+    this function is ever reached). The parameter exists only so the one
+    truth-fold call below (shared with the sampled path) has the same
+    signature; it never activates the LINK-7 robust rate path (this
+    function never passes ``source_intensity_uncertainty`` to
+    :func:`_finish_receiver_block`).
     """
 
     y0 = detector.dark_count_prob
@@ -1027,6 +1599,10 @@ def compute_receiver_block_pdt(
     f_nodes, p_nodes = gauss_hermite_lognormal_nodes(law, n_nodes)
     validate_tail_and_nodes(law, eta_base, f_nodes)
 
+    realized_intensities = {
+        name: intensity_factor * value for name, value in intensities.items()
+    }
+
     sum_p_availability = 0.0
     sum_weighted_q = {name: 0.0 for name in _INTENSITY_NAMES}
     sum_weighted_t = {name: 0.0 for name in _INTENSITY_NAMES}
@@ -1038,9 +1614,11 @@ def compute_receiver_block_pdt(
         p_i = float(p_i)
         eta_node = eta_base * float(f_i)
         node_channel = replace(channel_base_eff, transmittance=eta_node)
-        base = run_decoy_bb84(node_channel, intensities, n_pulses, detector_eff, eve=None, q=q)
+        gains, qber_per_intensity = expected_block_statistics(
+            node_channel, realized_intensities, detector_eff
+        )
         q_prime, e_prime, t_prime, a_i, _q_bar_i, q_bar_reg_i = shared_history_afterpulse(
-            base.gains, base.qber_per_intensity, pi, receiver_inputs.afterpulse_prob
+            gains, qber_per_intensity, pi, receiver_inputs.afterpulse_prob
         )
         r_click_i, availability_i = click_availability(
             pulse_repetition_rate_hz, q_bar_reg_i, receiver_inputs.dead_time_s

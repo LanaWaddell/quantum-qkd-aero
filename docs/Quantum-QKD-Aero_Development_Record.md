@@ -129,7 +129,7 @@ reverified in this sandbox and is carried forward unchanged since HYBRID-1 touch
 qiskit-dependent path. Per-commit history (full / no-qiskit-file,
 all recomputed 2026-08-18): `03736da` 163/142 → LINK-1 `8b7ef46` 219/198 → LINK-2 `803f854`
 255/234 → LINK-3 `223d25c` 294/273 → LINK-4 `4df5b7f` 347/326 → LINK-5 `bdd73de` 389/368 →
-TWIN-1 `eeea12e` 414/393 → TWIN-2 `60ff5a1` 439/418 → LINK-6a `2763c24` 562/541 → LINK-6b `e3815c0` 622/601 → HYBRID-1 (this commit) **800/800** in this no-qiskit sandbox (the qiskit-extra full-environment count is not re-run here; per Rule 10 of the companion's review-driven validation additions, an un-rerun expected count is a stop-condition threshold, never evidence, so it is left unstated rather than computed by arithmetic). Default
+TWIN-1 `eeea12e` 414/393 → TWIN-2 `60ff5a1` 439/418 → LINK-6a `2763c24` 562/541 → LINK-6b `e3815c0` 622/601 → HYBRID-1 `c69e461` **821 full / 800 no-qiskit-file** (821 passed, 0 skipped certified by the PI under `qkd_env` with the qiskit extra, 2026-08-24; 800 passed + 1 skipped independently certified on a fresh no-qiskit clone of the public remote, post-push, 2026-08-24 — the implementer's forward-written text correctly declined to state the full count before it was actually run). Default
 emission SHA-256 `3d1544027517197062097234d272ecbfbc03cd1864bbd0ee46169cf1250f1417` at every
 one of these commits (byte identity is environment-local — Mac arm64/numpy 2.4.6 vs cloud
 x86_64/numpy 2.4.4 differ at the ULP; the in-process parity tests are the portable oracle).
@@ -772,6 +772,23 @@ version) before editing; enumerate entry points / artifact writers / consumers f
 ---
 
 ## Correction Log
+
+- **2026-08-24 (Rev 15 post-push certification, Claude).** Implementation commit
+  `c69e461` verified on a fresh clone of the public remote: all fifteen delivered
+  files hash-identical to the independently verified copies; `docs/private/`
+  untracked; `docs/LINK_7_PLAN.md` correctly absent from tracking (C10/C11);
+  suite 800 passed + 1 skipped (no-qiskit clone) with zero regressions from
+  601+1; PI full-environment certification 821 passed, 0 skipped under
+  `qkd_env` (qiskit extra present since the HYBRID-0 certification round).
+  Independent pre-push verification had additionally reproduced both sample
+  canonical digests byte-for-byte, the timestamp-grammar rejection matrix on
+  construction and load paths, the loader's canonical-reserialization refusal,
+  all five `AssuranceDecision` invariants, the computed (non-stored)
+  `RegistrySnapshot.digest()`, the physics-import isolation of the
+  `adaptive`/`hybrid` namespaces, and the exact 7-line companion v3.2 diff.
+  Implementer performed by the Sonnet subagent per PI instruction (recorded in
+  packet rev 6); four implementer-flagged minimal resolutions accepted and
+  listed in the packet's §(f) report.
 
 - **2026-08-24 (Rev 15, HYBRID-1 Stage 1).** Implemented against
   `docs/HYBRID_1_PLAN.md` rev 6 (D-H1-1/2/3 confirmed by Echo, 2026-08-24), on

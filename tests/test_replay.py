@@ -34,6 +34,7 @@ from qkd.replay import (
     EFFECT_CODECS,
     LINK_PIPELINE_VERSION,
     LINK_PIPELINE_VERSION_V1,
+    LINK_PIPELINE_VERSION_V2,
     ManifestValidationError,
     PRODUCTION_EFFECT_IDS,
     ReplayRefusedError,
@@ -45,10 +46,10 @@ from qkd.replay import (
 
 
 def _valid_manifest_dict() -> dict:
-    """A valid **v2** (LINK-6b) manifest (§7: superseded from v1 by this PR)."""
+    """A valid **v3** (LINK-7) manifest (§13: superseded from v2 by this PR)."""
 
     return {
-        "manifest_version": 2,
+        "manifest_version": 3,
         "replayability": "replayable",
         "mission_config": {
             "samples": 10,
@@ -94,11 +95,22 @@ def _valid_manifest_dict() -> dict:
 
 def _valid_manifest_v1_dict() -> dict:
     """The exact historical **v1** (LINK-6a) manifest form (§7, B4) -- for the
-    v1/v2 compatibility-matrix tests (LINK-6b plan §5, B3)."""
+    v1/v2/v3 compatibility-matrix tests (LINK-7 plan §5, strict three-row
+    matrix)."""
 
     manifest = _valid_manifest_dict()
     manifest["manifest_version"] = 1
     manifest["pipeline_version"] = LINK_PIPELINE_VERSION_V1
+    return manifest
+
+
+def _valid_manifest_v2_dict() -> dict:
+    """The exact historical **v2** (LINK-6b) manifest form (LINK-7 plan §13)
+    -- v2 stays frozen exactly as LINK-6b defined it."""
+
+    manifest = _valid_manifest_dict()
+    manifest["manifest_version"] = 2
+    manifest["pipeline_version"] = LINK_PIPELINE_VERSION_V2
     return manifest
 
 
@@ -111,7 +123,7 @@ def _canonical(obj) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_effect_codecs_cover_exactly_the_sixteen_registered_effect_ids():
+def test_effect_codecs_cover_exactly_the_seventeen_registered_effect_ids():
     assert set(EFFECT_CODECS) == {
         "system_efficiency",
         "atmospheric_absorption",
@@ -129,6 +141,7 @@ def test_effect_codecs_cover_exactly_the_sixteen_registered_effect_ids():
         "timing_jitter",
         "polarization_misalignment",
         "phase_misalignment",
+        "calibrated_source_factor",
     }
 
 
@@ -157,8 +170,9 @@ def test_production_effects_order_is_pinned():
 
 
 def test_link_pipeline_version_constant_has_the_plan_frozen_value():
-    assert LINK_PIPELINE_VERSION == "link-6b.1"
+    assert LINK_PIPELINE_VERSION == "link-7.1"
     assert LINK_PIPELINE_VERSION_V1 == "link-6a.1"
+    assert LINK_PIPELINE_VERSION_V2 == "link-6b.1"
 
 
 def test_valid_manifest_round_trips_through_validation():
@@ -320,7 +334,7 @@ def test_canonical_json_reserialization_mismatch_rejected():
     manifest_json = _canonical(manifest)
     # A byte that makes the parsed form re-serialize differently: extra
     # whitespace (still valid JSON, but not canonical form).
-    tampered = manifest_json.replace('"manifest_version":2', '"manifest_version": 2')
+    tampered = manifest_json.replace('"manifest_version":3', '"manifest_version": 3')
     with pytest.raises(ManifestValidationError):
         _validate_manifest_json(tampered)
 
@@ -333,10 +347,10 @@ def test_link_seed_non_int_rejected():
 
 
 def test_manifest_version_unsupported_rejected():
-    # 1 and 2 are both supported (LINK-6b plan §5, B3); use a genuinely
-    # unsupported version.
+    # 1, 2, and 3 are all supported (LINK-7 plan §5, strict three-row
+    # matrix); use a genuinely unsupported version.
     manifest = _valid_manifest_dict()
-    manifest["manifest_version"] = 3
+    manifest["manifest_version"] = 4
     with pytest.raises(ManifestValidationError):
         validate_manifest_object(manifest)
 
