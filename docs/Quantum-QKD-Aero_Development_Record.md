@@ -1,5 +1,16 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
+> **REVISION 17 — updated 2026-08-24 (FIXTURE-1 + ADAPT-1; commit hash omitted pending post-push certification; see Correction Log).**
+> FIXTURE-1 adds a non-production quasiperiodic misalignment stress fixture and its
+> bounded finite-range discrepancy design note. ADAPT-1 implements ADR-0004 D1's passive
+> tier-4 attribution monitor: committed scalar references, exact-cadence synthetic traces,
+> separately calibrated TWIN-1 whiteness/NIS outcomes, a conservative operational OR
+> mapping, canonical adaptive records, and closed observable provenance metadata. Passive
+> monitoring never emits `ADVERSARIAL_SUSPECTED`; active attribution remains ADAPT-2.
+> Suite **948 full / 927 no-qiskit-file**, **+50/+50** from the tracked FIXTURE-1 baseline
+> of 898/877. No production physics, artifact writer, output schema, or default emission
+> path changed.
+>
 > **REVISION 16 — updated 2026-08-24 (LINK-7 source consumption, `f8c82f2`; see Correction Log).**
 > LINK-7 consumes `source.intensity_factor` — the last deferred observable — completing the
 > ADR-0003 estimator boundary: every partition field now has an authorized consumer or an
@@ -73,20 +84,23 @@ native v2 rate-distance artifact. PR-D hardens that artifact boundary: emitted v
 now fail fast on impossible values, mismatched array dimensions, undeclared schema keys,
 dimensionally invalid aggregates, algebraic inconsistencies, or provenance drift.
 ADR-0003 records the composable channel-physics layer downstream of ADR-0002's
-medium/topology/protocol frame. LINK-1 through LINK-6b implement that lane: every
+medium/topology/protocol frame. LINK-1 through LINK-7 implement that lane: every
 existing loss/detector constant became a fixed-ID production effect on a
 stack that is evaluated on every call, new physics enters only as declared, typed,
 bridge-rejected observables until an estimator explicitly consumes them, and the first
 consumer (LINK-6a's QKD receiver model) does so through a declared control surface, a
 canonical replay manifest, and an unchanged `bb84.py`; LINK-6b then consumes timing
-jitter, Doppler offset, and misalignment through that receiver path. In parallel the TWIN lane built
+jitter, Doppler offset, misalignment, and finally source intensity through that receiver
+path. In parallel the TWIN lane built
 the digital-twin diagnostic substrate (reference Kalman twin, calibrated whiteness/NIS,
 private-probe watermark) whose central theorem — passive observation of an
 exactly-law-matched replacement is blind, and the blindness is gain-independent — is
 demonstrated as ensemble behaviour, not asserted. ADR-0004 now establishes the next
 higher-layer boundary without modifying either substrate: adaptive decisions consume
 adversarially shapeable channel evidence, while physical and cryptographic assurance
-remain separate streams until an explicit policy layer combines them.
+remain separate streams until an explicit policy layer combines them. FIXTURE-1 adds a
+strictly non-production quasiperiodic stress surface; ADAPT-1 then implements the passive
+D1 monitor over committed scalar references without coupling it to the live physics path.
 
 The discipline throughout otherwise holds: if a quantity isn't checked against a
 known-true value or a structural invariant, it isn't trusted — and verification
@@ -124,27 +138,21 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **TWIN-2** | Private-probe watermark primitive; passive blindness gain-independent; relay blind by identity | ✅ `60ff5a1` (2026-08-11) |
 | **LINK-6a** | QKD receiver model, gated detection, `gate_window_s` control, PDT consumption, replay manifest, benchmark contract | ✅ `2763c24` (2026-08-17) |
 | **LINK-6b** | Timing-jitter gate acceptance, Doppler spectral-filter acceptance, misalignment consumption; manifest v2 + strict v1 replay; ADR-0003 §3.6 clarification | ✅ `e3815c0` (2026-08-18) |
+| **LINK-7** | Source-intensity consumption, robust certified decoy inversion, manifest v3 | ✅ `f8c82f2` (2026-08-24) |
 | **ADR-0004 / HYBRID-0** | Adaptive-coupling tier + hybrid QKD/PQC boundary; informative companion and staged implementation contract | ✅ ADR Accepted in `d7c9c33`; Stage 0 complete (2026-08-23) |
 | **HYBRID-1** | Boundary state model: tier-4 attribution contracts, hybrid enums/dataclasses/validation, canonical serialization/digests, posture-registry snapshot | ✅ Stage 1 complete (2026-08-24) |
+| **FIXTURE-1** | Non-production quasiperiodic misalignment stress fixture and bounded finite-range discrepancy note | ✅ `4c8d817` (2026-08-24) |
+| **ADAPT-1** | Passive tier-4 attribution monitor over committed scalar references and synthetic traces | ✅ implementation complete; hash pending post-push certification |
 
-**Test suite (current Rev-15 pre-push validation on the local `d48cb2c`-based tree, this
-sandbox environment — no qiskit extra installed):** **800 passed, 1 skipped**
-(`PYTHONPATH=src python3 -m pytest -q`); excluding the Qiskit-specific file, **800 passed**
-(`PYTHONPATH=src python3 -m pytest -q --ignore=tests/test_teleportation_qiskit.py`). Delta
-from Rev 14's local re-verification baseline (601 passed + 1 skipped / 601 passed) is
-**+199 / +199**, all in the three new HYBRID-1 test files
-(`tests/test_hybrid_states.py`, `tests/test_hybrid_registry.py`,
-`tests/test_hybrid_serialization.py`). Certification counts are environment-conditional and
-must name the environment; the qiskit-extra count (622 full-env reference) is not
-reverified in this sandbox and is carried forward unchanged since HYBRID-1 touches no
-qiskit-dependent path. Per-commit history (full / no-qiskit-file,
-all recomputed 2026-08-18): `03736da` 163/142 → LINK-1 `8b7ef46` 219/198 → LINK-2 `803f854`
-255/234 → LINK-3 `223d25c` 294/273 → LINK-4 `4df5b7f` 347/326 → LINK-5 `bdd73de` 389/368 →
-TWIN-1 `eeea12e` 414/393 → TWIN-2 `60ff5a1` 439/418 → LINK-6a `2763c24` 562/541 → LINK-6b `e3815c0` 622/601 → HYBRID-1 `c69e461` 821/800 → LINK-7 `f8c82f2` **874 full / 853 no-qiskit-file** (874 certified by the PI under `qkd_env`; 853 + 1 skipped independently certified on a fresh no-qiskit clone, post-push). Superseded HYBRID-1 detail preserved: `c69e461` **821 full / 800 no-qiskit-file** (821 passed, 0 skipped certified by the PI under `qkd_env` with the qiskit extra, 2026-08-24; 800 passed + 1 skipped independently certified on a fresh no-qiskit clone of the public remote, post-push, 2026-08-24 — the implementer's forward-written text correctly declined to state the full count before it was actually run). Default
-emission SHA-256 `3d1544027517197062097234d272ecbfbc03cd1864bbd0ee46169cf1250f1417` at every
-one of these commits (byte identity is environment-local — Mac arm64/numpy 2.4.6 vs cloud
-x86_64/numpy 2.4.4 differ at the ULP; the in-process parity tests are the portable oracle).
-HYBRID-1 adds no emitted-artifact path, so this hash is unaffected.
+**Test suite (current Rev 17 local `qkd_env` validation):** **948 passed**
+(`qkd_env/bin/python -m pytest -q`); excluding the Qiskit-specific file, **927 passed**
+(`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`). Delta from
+the tracked FIXTURE-1 baseline (**898/877**) is **+50/+50**, all in
+`tests/test_adaptive_monitor.py` and `tests/test_adaptive_canonical.py`; the v1.4.1 C5
+check was folded into the existing adaptive import-graph test, so the approved total
+remains 948. Earlier per-revision counts remain in the Correction Log. The default artifact
+is byte-identical to a clean `4c8d817` export in the same environment; cross-environment
+literal hashes are not portable, so in-process parity remains the portable oracle.
 
 `python src/qkd/run.py` still prints `Min loss 27.7 dB | Fidelity 0.990` (verified).
 `python src/qkd/run_fibre.py` prints
@@ -613,17 +621,27 @@ wrapper), `provenance.py`
 `run.py` (satellite I/O and plotting only, with pre-write schema/provenance validation),
 `run_fibre.py` (fibre-sweep I/O and plotting only, with pre-write schema/provenance
 validation), and `schema.py` (v2-only L1 recognizer plus L2-L5 deep validator; the old
-orbital `V2_REQUIRED_KEYS` stub is retired). **LINK/TWIN additions (Revs 13–13.1):** `link.py` (ADR-0003
+orbital `V2_REQUIRED_KEYS` stub is retired). `canonical.py` is the schema-neutral canonical
+dataclass-envelope mechanism; semantic schema identity remains at each caller. **LINK/TWIN
+additions (Revs 13–16):** `link.py` (ADR-0003
 contracts, `ChannelStack`, seeded child RNG, `apply_link_state` bridge, control registry,
-audit record — untouched since LINK-5), `effects.py` (sixteen built-in production and
-opt-in effects through LINK-6b), `detection.py` (QKD receiver model, gated detection,
-timing/filter/misalignment folds, PDT admission/quadrature/guards), `replay.py` (strict
-manifest v1/v2 support, sixteen effect codecs, `replay_from_provenance`,
-`LINK_PIPELINE_VERSION = "link-6b.1"`), `benchmark.py` (artifact
+audit record — untouched since LINK-5), `effects.py` (seventeen built-in production and
+opt-in effects through LINK-7), `detection.py` (QKD receiver model, gated detection,
+timing/filter/misalignment/source folds, PDT admission/quadrature/guards), `replay.py`
+(`replay_from_provenance`, `LINK_PIPELINE_VERSION = "link-7.1"`, strict manifest v1/v2/v3
+support, seventeen effect codecs), `benchmark.py` (artifact
 contract + validator), `twin.py` (reference Kalman twin + calibrated diagnostics),
 `twin_watermark.py` (private-probe primitive). `mission.py` composes the stack on every
 call and owns the union control registry. `DECLARED_SCHEMA_EXTENSIONS` now holds exactly
 `profile → link_receiver` and `run_metadata → link_provenance`.
+
+**Adaptive/HYBRID additions (Revs 15–17):** `adaptive/contracts.py` remains the stdlib-only
+tier-4 evidence vocabulary. `adaptive/observables.py`, `references.py`, `traces.py`, and
+`monitor.py` implement ADAPT-1's closed observable registry, digest-bound scalar reference,
+exact-cadence synthetic trace contract/generators, and passive TWIN-backed monitor.
+`hybrid/serialization.py` is now a thin `hybrid-1.0` wrapper over `canonical.py`; all
+pre-extraction HYBRID bytes and digests remain fixture-pinned. `fixtures/quasiperiodic.py`
+is FIXTURE-1's non-production stress fixture and is neither production-wired nor PDT-admitted.
 
 **Legacy decorative path — retired in PR0/2B-6a:**
 - `qkd_model.py` (repo root) — second entry point; deleted in PR0.
@@ -634,7 +652,7 @@ call and owns the union control registry. `DECLARED_SCHEMA_EXTENSIONS` now holds
 - Stale root `./results.json` (pre-nesting flat shape, no current writer) — `git rm` in PR0.
 - The retirement is documented in `docs/architecture/ADR-0001-single-authoritative-pipeline.md`.
 
-Docs (Revs 13–14 additions): `docs/LINK_1_PLAN.md`…`LINK_5_PLAN.md`,
+Docs (Revs 13–17 additions): `docs/LINK_1_PLAN.md`…`LINK_5_PLAN.md`,
 `docs/LINK_6A_PLAN.md` (+ six `LINK_6A_*REVIEW.md`), `docs/LINK_6B_PLAN.md`
 (+ its review records), `docs/TWIN_1_PLAN.md`, `docs/TWIN_2_PLAN.md`,
 `docs/notes/NOTE-sequencing-2026-08-10.md` (normative lane sequencing),
@@ -649,6 +667,8 @@ Docs: `docs/INTERFACES.md` (canonical v2 contract),
 adaptive-coupling and hybrid-boundary decision),
 `docs/architecture/pqc_hybrid_architecture.md` (informative ADR-0004 companion),
 `docs/HYBRID_0_PLAN.md` (provenance-preserving Stage 0 execution record),
+`docs/ADAPT_1_PLAN.md` (v1.4.1 authorized execution packet),
+`docs/notes/DN-quasiperiodic-misalignment.md` (FIXTURE-1 design note),
 `docs/architecture/quantum-qkd-aero-architecture-map.md` (architecture/status map),
 `docs/PR_D_SCHEMA_HARDENING.md` (active deep-validator contract),
 `docs/SCHEMA_HARDENING_2B.md` (historical pre-fibre hardening spec),
@@ -721,10 +741,10 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
 8. **PR-D — Deep schema validation and dimensional correction: complete.** The active
    v2 schema validator now enforces L2-L5, declared-extension vocabulary, provenance
    coverage, and the axis-conditional `secure_key_yield_bits` rule.
-9. **ADR-0003 / LINK-0 — ratified (2026-07-17)**, and **LINK-1 → LINK-6b implemented
-   (2026-08-10 → 08-18)** — see §2 and the §1 per-commit table. The receiver consumes
-   detector-side observables plus timing jitter, Doppler offset, and misalignment; the
-   residual bridge rejects only source `intensity_factor`.
+9. **ADR-0003 / LINK-0 — ratified (2026-07-17)**, and **LINK-1 → LINK-7 implemented
+   (2026-08-10 → 08-24)** — see §2 and the Correction Log. The receiver consumes
+   detector-side observables plus timing jitter, Doppler offset, misalignment, and source
+   `intensity_factor`; the residual bridge rejects nothing non-identity.
 10. **TWIN-1 / TWIN-2 complete (2026-08-11)** — synthetic Route-2 primitive authorized by the
    amended sequencing note; link instantiation of Route 2 stays **Exp-1-gated**.
 11. **ADR-0004 / HYBRID-0 Stage 0 — complete (2026-08-23).** ADR-0004 r3 is Accepted;
@@ -746,9 +766,18 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
    commit (schema-listing addition + revision-log entry, nothing else). 199 new tests
    across `tests/test_hybrid_states.py`, `tests/test_hybrid_registry.py`, and
    `tests/test_hybrid_serialization.py`; zero regressions.
+13. **FIXTURE-1 — complete (2026-08-24).** A non-production quasiperiodic misalignment
+   fixture and 24-test stress program are preserved under `qkd.fixtures`; the fixture is
+   absent from production composition and the PDT allowlist. Its design note limits
+   discrepancy claims to the declared finite range and bounded-type structure.
+14. **ADAPT-1 — complete (2026-08-24; hash pending post-push certification).** The passive
+   tier-4 monitor evaluates exact-length synthetic scalar traces against digest-bound
+   committed references using TWIN-1 whiteness/NIS components. It records both component
+   outcomes, applies the declared conservative operational OR mapping, and never emits
+   `ADVERSARIAL_SUSPECTED`. Canonical serialization was extracted to `qkd.canonical`; the
+   HYBRID wrapper and all frozen HYBRID fixture bytes/digests remain unchanged.
 
 **Open lanes (not yet sequenced; a sequencing decision is the next PI call):**
-- **Source consumption** — LINK-5 gate items 1–2 (`intensity_factor` into the estimator).
 - **Receiver-aware Eve** — through the LINK-6a R6 path; one canonical anomaly helper.
 - **LINK-6c candidate** — couple filter bandwidth honestly to background spectral
   radiance/rate density and FOV signal cost before any advantage benchmark.
@@ -757,6 +786,8 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
 - **HYBRID Stage 2** — the policy engine: deterministic evaluation from evidence bundles
   consuming Stage 1's boundary state model and registry snapshot interface; exhaustive
   policy matrix tests; audit-event generation. No cryptographic derivation yet.
+- **ADAPT-2** — active private-probe/watermark attribution; the passive ADAPT-1 monitor's
+  `ADVERSARIAL_SUSPECTED` prohibition remains until that evidence basis is implemented.
 - **TWIN-3** — finite-window power study (registered in the sequencing note).
 - **QCC proposal skeleton** — Project Overview / Scientific & Technical Approach /
   Performance Analysis & Benchmarking / Supporting Documentation, per the technical package;
@@ -783,6 +814,22 @@ version) before editing; enumerate entry points / artifact writers / consumers f
 ---
 
 ## Correction Log
+
+- **2026-08-24 (Rev 17, FIXTURE-1 + ADAPT-1).** The PI resolved the sequencing conflict by
+  landing FIXTURE-1 first as isolated commit `4c8d817`; its transient APPLY note was deleted
+  rather than committed. ADAPT-1 was then redispatched from that tracked baseline under
+  `docs/ADAPT_1_PLAN.md` v1.4.1. The first full ADAPT run stopped at one unenumerated legacy
+  test: canonical-mechanism extraction correctly made `hybrid/serialization.py` import
+  `qkd.canonical`, while the HYBRID import guard still prohibited that module. Per the
+  superseded-test policy, implementation paused; the PI approved §6 superseded test 2 and
+  C5 before the allowlist gained exactly that one clause. Physics-prefix assertions were
+  left untouched, only `serialization.py` exercises the allowance, and HYBRID byte/digest
+  fixtures remain the oracle. Final real local runs: **948 passed** with the Qiskit extra
+  and **927 passed** with `tests/test_teleportation_qiskit.py` ignored, **+50/+50** from the
+  FIXTURE-1 baseline of 898/877. A clean `4c8d817` export and the working tree emitted
+  byte-identical default `outputs/results.json` in the same environment; no production
+  writer or physics path changed. ADAPT-1's implementation commit hash is intentionally
+  omitted for post-push certification.
 
 - **2026-08-24 (Rev 16, LINK-7 + post-push certification, Claude).** LINK-7 (`f8c82f2`)
   reconciled and certified: fresh public clone — all thirteen code/test/fixture files

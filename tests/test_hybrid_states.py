@@ -667,10 +667,11 @@ def _py_files(root: Path) -> list[Path]:
 
 
 def test_adaptive_contracts_imports_nothing_project_internal():
-    for path in _py_files(_REPO_SRC / "qkd" / "adaptive"):
-        modules = _imported_module_names(path)
-        qkd_imports = {m for m in modules if m == "qkd" or m.startswith("qkd.") or m.startswith(".")}
-        assert not qkd_imports, f"{path} imports project-internal module(s): {qkd_imports}"
+    # ADAPT-1 plan Sec6: this invariant belongs specifically to the frozen contract module.
+    path = _REPO_SRC / "qkd" / "adaptive" / "contracts.py"
+    modules = _imported_module_names(path)
+    qkd_imports = {m for m in modules if m == "qkd" or m.startswith("qkd.") or m.startswith(".")}
+    assert not qkd_imports, f"{path} imports project-internal module(s): {qkd_imports}"
 
 
 _PHYSICS_MODULE_PREFIXES = (
@@ -703,7 +704,8 @@ def test_hybrid_imports_only_adaptive_contracts_and_itself():
         for module in modules:
             if not (module == "qkd" or module.startswith("qkd.") or module.startswith(".")):
                 continue  # stdlib / third-party import, unrestricted
-            allowed = module == "qkd.adaptive.contracts" or module.startswith("qkd.hybrid") or module.startswith(".")
+            # ADAPT-1 plan Sec6 permits only the schema-neutral canonical extraction.
+            allowed = module == "qkd.adaptive.contracts" or module == "qkd.canonical" or module.startswith("qkd.hybrid") or module.startswith(".")
             assert allowed, f"{path} has a disallowed project-internal import: {module!r}"
             for physics_prefix in _PHYSICS_MODULE_PREFIXES:
                 assert not module.startswith(physics_prefix), (

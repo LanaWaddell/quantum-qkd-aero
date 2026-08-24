@@ -80,7 +80,15 @@ development record carries dated corrections rather than silently rewriting hist
   L3 ranges/vocabulary, L4 constants, and L5 cross-field consistency by default before
   every write, including the axis-conditional yield rule that keeps aggregates
   dimensionally honest (`docs/PR_D_SCHEMA_HARDENING.md`).
-- A pytest suite (**622 with the Qiskit extra, 601 with the Qiskit-specific file ignored**) covering the physics and the
+- **Passive adaptive attribution (ADAPT-1)** — committed scalar references and synthetic
+  channel-state traces feed TWIN-1's separately calibrated whiteness/NIS diagnostics. The
+  monitor records both component outcomes and applies a conservative operational OR mapping;
+  it can report environmental consistency, unexplained degradation, or insufficient evidence,
+  but never claims passive proof of an adversary.
+- **Quasiperiodic stress fixture (FIXTURE-1)** — a non-production, nonphysical deterministic
+  misalignment fixture for bounded finite-range sampling diagnostics; it is not admitted to the
+  production stack or PDT allowlist.
+- A pytest suite (**948 with the Qiskit extra, 927 with the Qiskit-specific file ignored**) covering the physics and the
   honesty guards (turbulence-independence, geometry coupling, decoy bounds,
   PNS-invisible-to-QBER, fidelity arch, fibre-contract flow, provenance enforcement,
   deep-schema goldens and mutation negatives, determinism).
@@ -111,8 +119,8 @@ stochastic effects draw from hash-derived order-independent RNG streams for exac
 replay, operational controls are declared explicit inputs with feasibility coupling
 to the composed link state, and estimator-stage observables (QBER, secure-key rate)
 exist only after composition — never as per-effect fields. The **LINK architectural
-lane remains active**, with LINK-1 through LINK-6b implemented; source consumption,
-receiver-aware Eve integration, filter/background coupling, and the benchmark sweep
+lane remains active**, with LINK-1 through LINK-7 implemented; receiver-aware Eve
+integration, filter/background coupling, and the benchmark sweep
 driver remain open. ADR-0003 was ratified with its body unchanged after assessment
 against the field's consolidated time-bin review (see `docs/references/`), which
 independently validated the composition rules it defines.
@@ -125,7 +133,9 @@ implement the boundary's state model (enums, frozen dataclasses, validation, can
 serialization/digests, and the algorithm-posture registry snapshot interface) per
 `docs/architecture/pqc_hybrid_architecture.md`, the informative companion. The policy
 engine, KDF/cryptographic derivation, authentication integration, and physics coupling
-(Stages 2-5) remain planned rather than implemented.
+(Stages 2-5) remain planned rather than implemented. **ADAPT-1 is complete** as a passive,
+separately simulable tier-4 monitor over synthetic scalar traces and committed references;
+active watermark attribution and live-pipeline coupling remain deferred.
 
 ## The medium-general channel layer (built & certified)
 
@@ -147,10 +157,11 @@ migration. The generalization was built and verified in sequence:
   distance curve** with **maximum secure distance** (~190 km on the default illustrative
   fibre) as the figure of merit.
 
-**Next / active:** the **LINK lane** continues after LINK-6b with source consumption,
-receiver-aware Eve integration, and honest filter/background coupling before any
-benchmark advantage claim. **HYBRID Stage 2** (the policy engine) is next under
-ADR-0004, consuming Stage 1's boundary state model; no cryptographic derivation yet.
+**Next / active:** the **LINK lane** continues after LINK-7 with receiver-aware Eve
+integration and honest filter/background coupling before any benchmark advantage claim.
+**ADAPT-2** is the future active-probe/watermark attribution lane. **HYBRID Stage 2** (the
+policy engine) consumes Stage 1's boundary state model only when sequenced; no
+cryptographic derivation exists yet.
 Phase 2D remains a downstream reader of computed `PhysicsSignals`; no trust field
 enters the physics modules.
 
@@ -187,7 +198,7 @@ Run the simulator (writes `outputs/results.json` and the pass plot):
 python src/qkd/run.py
 ```
 
-Run the test suite — **601 tests with the Qiskit-specific file ignored, or 622 with the
+Run the test suite — **927 tests with the Qiskit-specific file ignored, or 948 with the
 Qiskit extra installed**:
 
 ```
@@ -206,7 +217,9 @@ npm start
 Active code is in `src/qkd/`: the medium/physics modules (`channel.py`, `fibre.py`,
 `orbit.py`, `teleportation.py`, `chsh.py`, `bb84.py`, `eve.py`, `coherence.py`); the
 LINK/TWIN modules (`link.py`, `effects.py`, `detection.py`, `replay.py`, `benchmark.py`,
-`twin.py`, `twin_watermark.py`); and `mission.py` (composition), `provenance.py`
+`twin.py`, `twin_watermark.py`); the passive adaptive monitor in `adaptive/`, the hybrid
+boundary model in `hybrid/`, schema-neutral canonical serialization in `canonical.py`, and
+the non-production stress fixtures in `fixtures/`; and `mission.py` (composition), `provenance.py`
 (enforced origin tags), `signals.py` (interface dataclasses), `run.py` / `run_fibre.py`
 (I/O), and `schema.py`. The dashboard is in `dashboard.js`; tests in `tests/`.
 `docs/INTERFACES.md` is the canonical physics/output contract and
