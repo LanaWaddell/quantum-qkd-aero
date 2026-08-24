@@ -668,6 +668,7 @@ class AssuranceDecision:
     decision_id: str
     policy_id: str
     policy_version: str
+    policy_profile: MissionPolicyProfile
     physical_status: PhysicalLinkStatus
     crypto_status: CryptoPostureStatus
     authentication_status: AuthenticationStatus
@@ -941,3 +942,7 @@ Round-trip input: `adr4-ratification-read-round-trip.md`, SHA-256 `f3a9f22289fce
 2. (In ADR-0004 r3, recorded here for chain completeness) the Consequences reference to the companion updated from v2 to v3.1.
 
 PI architecture acceptance is recorded in the round-trip document; the ADR status flip from Proposed to Accepted still occurs only in Commit A, at the PI's hand, per HYBRID-0 rev 3.
+
+### v3.2 — 2026-08-24 (HYBRID-1 Stage 1 reconciliation)
+
+HYBRID-1 (`docs/HYBRID_1_PLAN.md` rev 6, C3/C7/C9) implements this note's Stage 1 schema with one deliberate deviation from the v3.1 listing: `AssuranceDecision` gains a `policy_profile: MissionPolicyProfile` field (Echo blocker 1) so the decision record is self-validating and audit-complete without dereferencing the policy that produced it — `__post_init__` enforces `policy_profile == HYBRID_REQUIRED` ⇒ `issuance_mode ∈ {HYBRID, NONE}` directly on the record. The schema listing above is updated to match the implemented contract; no other change. Shipped in HYBRID-1's own records commit, not deferred to a later touch.

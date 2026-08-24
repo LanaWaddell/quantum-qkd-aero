@@ -1,0 +1,58 @@
+{
+  "AlgorithmPosture": {
+    "canonical": "{\"payload\":{\"effective_until_utc\":\"2026-08-24T12:05:00.000000Z\",\"notes\":\"baseline approved suite\",\"parameter_set\":\"768\",\"primitive\":\"kem\",\"reviewed_at_utc\":\"2026-08-24T12:00:00.000000Z\",\"source_refs\":[\"nist-fips-203\"],\"status\":\"approved\",\"suite_id\":\"ML-KEM-768\"},\"record_type\":\"AlgorithmPosture\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "686a5e15be52ed7b52f6434134ca3c9a3d89b437ac846fdd69068009dbe76906"
+  },
+  "AssumptionUpdateEvent": {
+    "canonical": "{\"payload\":{\"effective_at_utc\":\"2026-08-24T12:00:00.000000Z\",\"event_id\":\"assumption-001\",\"new_status\":\"approved\",\"previous_status\":\"watched\",\"reviewed_by\":\"posture-board\",\"source_refs\":[\"nist-fips-203\"],\"suite_id\":\"ML-KEM-768\"},\"record_type\":\"AssumptionUpdateEvent\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "4e2c6ce80c70ffc4b06278bdf942b4ddddf067e011a1ff30c7ab97498dae5b4d"
+  },
+  "AssuranceDecision": {
+    "canonical": "{\"payload\":{\"attribution_evidence_ref\":\"attr-evidence-001\",\"authentication_status\":\"valid\",\"crypto_status\":\"approved\",\"decision_id\":\"decision-001\",\"disposition\":\"assured\",\"evidence_refs\":[\"ev-decision-001\"],\"freshness_results\":{\"crypto\":\"fresh\",\"physical\":\"fresh\"},\"issuance_mode\":\"hybrid\",\"key_buffer_evidence_ref\":\"ev-buffer-001\",\"physical_status\":\"healthy\",\"policy_id\":\"policy-001\",\"policy_profile\":\"hybrid_required\",\"policy_version\":\"1.0.0\",\"reasons\":[\"all gates passed\"],\"required_actions\":[],\"selected_input_refs\":[\"qkey-001\",\"pqc-secret-handle-001\"],\"session_id\":\"sess-001\",\"transcript_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"record_type\":\"AssuranceDecision\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "10a0a3592de456a2b5abaed514be00c2070badb3a41b80d9b50d9309fcd26a0b"
+  },
+  "AuthenticationEvidence": {
+    "canonical": "{\"payload\":{\"channel_id\":\"classical-ch-001\",\"credential_ref\":\"cred-001\",\"evidence_refs\":[],\"mechanism\":\"ml-dsa-65-signed\",\"peer_id\":\"peer-ground-01\",\"scope\":\"qkd_classical_channel\",\"session_id\":\"sess-001\",\"status\":\"valid\",\"transcript_hash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"record_type\":\"AuthenticationEvidence\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "10cf6a7464a3a91dbfd520e4cb3c7c950b50f26394704359a919e87cec7bb31b"
+  },
+  "CryptoAssuranceState": {
+    "canonical": "{\"payload\":{\"authentication_refs\":[\"auth-ref-001\",\"auth-ref-002\"],\"evidence_refs\":[],\"implementation_status\":\"approved\",\"kem_posture_ref\":\"posture-mlkem768\",\"observed_at_utc\":\"2026-08-24T12:00:00.000000Z\",\"peer_id\":\"peer-ground-01\",\"session_id\":\"sess-001\",\"signature_posture_ref\":\"posture-mldsa65\",\"status\":\"approved\"},\"record_type\":\"CryptoAssuranceState\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "2edf4a5d425eaf83705fe8892f4260d3885808e554d7cfa6700fef9427a443e7"
+  },
+  "DegradationAttributionEvidence": {
+    "canonical": "{\"payload\":{\"confidence\":0.87,\"evidence_id\":\"attr-evidence-001\",\"evidence_refs\":[],\"freshness\":\"fresh\",\"link_id\":\"link-001\",\"monitor_id\":\"tier4-monitor-01\",\"monitor_version\":\"0.1.0\",\"produced_at_utc\":\"2026-08-24T12:05:00.000000Z\",\"reason_codes\":[\"nominal_turbulence\"],\"reference_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"reference_id\":\"ref-model-001\",\"source_independence\":\"independent-sensor\",\"source_integrity\":\"signed\",\"verdict\":\"environment_consistent\",\"window_end_utc\":\"2026-08-24T12:05:00.000000Z\",\"window_start_utc\":\"2026-08-24T12:00:00.000000Z\"},\"record_type\":\"DegradationAttributionEvidence\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "c9246923882d570a14b2e389c8eae73bf8ced178f8655e23cb370ef724eb32d0"
+  },
+  "HybridKeyMaterial": {
+    "canonical": "{\"payload\":{\"derivation_suite\":\"hkdf-sha384-hybrid-v1\",\"key_id\":\"hybridkey-001\",\"key_ref\":\"derived-key-handle-001\",\"policy_version\":\"1.0.0\",\"pqc_suite_id\":\"ML-KEM-768\",\"provenance_refs\":[\"hybridkey-001-provenance\"],\"purpose\":\"traffic\",\"qkd_epoch_id\":\"epoch-001\",\"session_id\":\"sess-001\"},\"record_type\":\"HybridKeyMaterial\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "2d25f5d7c25995c875a8e01a7b166bf147d8b4d358c3cbb511a0ee8a62de7609"
+  },
+  "KeyBufferState": {
+    "canonical": "{\"payload\":{\"buffer_fill_bits\":1048576,\"consumption_rate_bps\":2048.0,\"depletion_rate_anomaly\":false,\"evidence_refs\":[\"ev-buffer-001\"],\"link_id\":\"link-001\",\"next_contact_window_utc\":\"2026-08-24T12:05:00.000000Z\",\"observed_at_utc\":\"2026-08-24T12:00:00.000000Z\",\"projected_depletion_utc\":\"2026-08-24T12:05:00.000000Z\"},\"record_type\":\"KeyBufferState\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "c6d7aa72fb58b9d1a366d3c9ab22e03a0fc14ea812da6c6b96fc48abdad7cad2"
+  },
+  "KeyProvenanceRecord": {
+    "canonical": "{\"payload\":{\"created_at_utc\":\"2026-08-24T12:00:00.000000Z\",\"decision_ref\":\"decision-001\",\"derivation_suite\":\"hkdf-sha384-hybrid-v1\",\"key_id\":\"hybridkey-001\",\"policy_version\":\"1.0.0\",\"rejected_input_refs\":[],\"schema_version\":\"hybrid-1.0\",\"selected_input_refs\":[\"qkey-001\",\"pqc-secret-handle-001\"],\"transcript_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"record_type\":\"KeyProvenanceRecord\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "76d914978209c7c70b9864e2e170b79e54b9baf4ebe6e78f198a86161f7f6aaa"
+  },
+  "MissionPolicy": {
+    "canonical": "{\"payload\":{\"allow_watched_pqc\":false,\"emergency_exception_ref\":null,\"metadata\":{\"mission\":\"aero-demo-1\",\"owner\":\"ops\"},\"policy_id\":\"policy-001\",\"policy_version\":\"1.0.0\",\"profile\":\"hybrid_required\",\"require_human_review_for_contested\":true},\"record_type\":\"MissionPolicy\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "6e053dbe1d8b5e15d92e5da3cae0c27eb75f87a6f61c65be8f581fb3e75fa80d"
+  },
+  "PhysicalLinkState": {
+    "canonical": "{\"payload\":{\"attribution_evidence_ref\":\"attr-evidence-001\",\"decoy_pns_suspicion\":\"none\",\"epoch_id\":\"epoch-001\",\"error_correction_leakage_bits\":256,\"evidence_refs\":[\"ev-link-001\",\"ev-link-002\"],\"finite_key_epsilon\":1e-09,\"link_id\":\"link-001\",\"observed_at_utc\":\"2026-08-24T12:00:00.000000Z\",\"peer_id\":\"peer-ground-01\",\"privacy_amplification_id\":\"pa-001\",\"qber\":0.021,\"secure_key_rate_bps\":4300.25,\"session_id\":\"sess-001\",\"sifted_key_rate_bps\":12000.5,\"status\":\"healthy\"},\"record_type\":\"PhysicalLinkState\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "a806dcb9aeb1f4af5e31ebd3f09155e0747e9c63c1c3e68fe68be207e5cdace4"
+  },
+  "PqcHandshakeEvidence": {
+    "canonical": "{\"payload\":{\"algorithm_posture\":{\"effective_until_utc\":\"2026-08-24T12:05:00.000000Z\",\"notes\":\"baseline approved suite\",\"parameter_set\":\"768\",\"primitive\":\"kem\",\"reviewed_at_utc\":\"2026-08-24T12:00:00.000000Z\",\"source_refs\":[\"nist-fips-203\"],\"status\":\"approved\",\"suite_id\":\"ML-KEM-768\"},\"evidence_refs\":[\"ev-pqc-001\"],\"implementation_id\":\"liboqs-0.10\",\"implementation_status\":\"approved\",\"kem_suite_id\":\"ML-KEM-768\",\"peer_id\":\"peer-ground-01\",\"session_id\":\"sess-001\",\"shared_secret_ref\":\"pqc-secret-handle-001\",\"signature_suite_id\":\"ML-DSA-65\",\"transcript_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"record_type\":\"PqcHandshakeEvidence\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "feef477d833eb4066f9cc61f1982f737cfa68b1940d4c362cca3db9bd4c357a3"
+  },
+  "QkdKeyCandidate": {
+    "canonical": "{\"payload\":{\"epoch_id\":\"epoch-001\",\"evidence_refs\":[],\"key_id\":\"qkey-001\",\"link_id\":\"link-001\",\"physical_state_ref\":\"physlink-001\",\"produced_at_utc\":\"2026-08-24T12:00:00.000000Z\",\"secret_ref\":\"secret-handle-001\",\"secure_key_bits\":8192,\"session_id\":\"sess-001\"},\"record_type\":\"QkdKeyCandidate\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "b20e90922484ae65f9523ddd6954e0d80453e307c309f698e8a987c850053d06"
+  },
+  "RegistrySnapshot": {
+    "canonical": "{\"payload\":{\"postures\":{\"ML-KEM-768\":{\"effective_until_utc\":\"2026-08-24T12:05:00.000000Z\",\"notes\":\"baseline approved suite\",\"parameter_set\":\"768\",\"primitive\":\"kem\",\"reviewed_at_utc\":\"2026-08-24T12:00:00.000000Z\",\"source_refs\":[\"nist-fips-203\"],\"status\":\"approved\",\"suite_id\":\"ML-KEM-768\"}},\"produced_at_utc\":\"2026-08-24T12:00:00.000000Z\",\"registry_version\":\"registry-v1\"},\"record_type\":\"RegistrySnapshot\",\"schema_version\":\"hybrid-1.0\"}",
+    "digest": "795a5e120a8832ab5f724116d8b5b75aa6319f226dcccffaf2d9f03cbec86b56"
+  }
+}

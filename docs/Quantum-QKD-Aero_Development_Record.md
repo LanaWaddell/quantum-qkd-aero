@@ -1,15 +1,20 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
-> **REVISION 14 — updated 2026-08-23 (ADR-0004 ratification / HYBRID-0 Stage 0;
-> see Correction Log).** ADR-0004 r3 is Accepted and defines an adaptive-coupling
-> tier above ADR-0003's three channel-effect tiers plus a strict hybrid QKD+PQC
-> boundary above the physics pipeline. Its companion v3.1 is informative: it
-> records the assurance states, policy result model, induced-degradation threat
-> model, boundary contracts, and Stages 1–6, but implements none of them. HYBRID-0
-> Stage 0 is documentation only; source, schemas, emitted artifacts, and tests are
-> unchanged. The LINK architectural lane remains active with LINK-1 through
-> LINK-6b complete. Historical corrections and superseded counts/statuses remain
-> in the Correction Log.
+> **REVISION 15 — updated 2026-08-24 (HYBRID-1 Stage 1 — boundary state model;
+> see Correction Log).** HYBRID-1 implements the ADR-0004 D2 hybrid QKD+PQC
+> boundary's **state model only**: tier-4-owned attribution contracts at
+> `src/qkd/adaptive/contracts.py` (`AttributionVerdict`,
+> `DegradationAttributionEvidence`, per D-H1-2) and the boundary's enums, frozen
+> dataclasses, validation, canonical serialization/digests, and the
+> algorithm-posture registry snapshot interface under `src/qkd/hybrid/`, per the
+> companion's Stage 1 contract checklist. No policy engine, KDF/cryptographic
+> derivation, authentication integration, or physics coupling — those remain
+> Stages 2–5. `AssuranceDecision` gains a `policy_profile` field beyond the
+> companion v3.1 schema listing (Echo blocker 1); the companion is reconciled to
+> v3.2 in this same commit (schema-listing addition + revision-log entry only).
+> The LINK architectural lane remains active with LINK-1 through LINK-6b
+> complete. Historical corrections and superseded counts/statuses remain in the
+> Correction Log.
 
 **Scope of this document:** a phase-by-phase record of the Phase 2B physics build —
 what was implemented, how it was verified, the honesty guards in place, the file
@@ -109,19 +114,26 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **LINK-6a** | QKD receiver model, gated detection, `gate_window_s` control, PDT consumption, replay manifest, benchmark contract | ✅ `2763c24` (2026-08-17) |
 | **LINK-6b** | Timing-jitter gate acceptance, Doppler spectral-filter acceptance, misalignment consumption; manifest v2 + strict v1 replay; ADR-0003 §3.6 clarification | ✅ `e3815c0` (2026-08-18) |
 | **ADR-0004 / HYBRID-0** | Adaptive-coupling tier + hybrid QKD/PQC boundary; informative companion and staged implementation contract | ✅ ADR Accepted in `d7c9c33`; Stage 0 complete (2026-08-23) |
+| **HYBRID-1** | Boundary state model: tier-4 attribution contracts, hybrid enums/dataclasses/validation, canonical serialization/digests, posture-registry snapshot | ✅ Stage 1 complete (2026-08-24) |
 
-**Test suite (current Rev-14 pre-push validation on the local `11dd75e`-based tree):** with
-the qiskit extra available, **622 passed** (`qkd_env/bin/python -m pytest -q`). Excluding
-the Qiskit-specific file, **601 passed**
-(`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`). Delta from
-Rev 13.1: **+0 / +0**, as required for a documentation-only dispatch. Certification counts
-are environment-conditional and must name the environment. Per-commit history (full / no-qiskit-file,
+**Test suite (current Rev-15 pre-push validation on the local `d48cb2c`-based tree, this
+sandbox environment — no qiskit extra installed):** **800 passed, 1 skipped**
+(`PYTHONPATH=src python3 -m pytest -q`); excluding the Qiskit-specific file, **800 passed**
+(`PYTHONPATH=src python3 -m pytest -q --ignore=tests/test_teleportation_qiskit.py`). Delta
+from Rev 14's local re-verification baseline (601 passed + 1 skipped / 601 passed) is
+**+199 / +199**, all in the three new HYBRID-1 test files
+(`tests/test_hybrid_states.py`, `tests/test_hybrid_registry.py`,
+`tests/test_hybrid_serialization.py`). Certification counts are environment-conditional and
+must name the environment; the qiskit-extra count (622 full-env reference) is not
+reverified in this sandbox and is carried forward unchanged since HYBRID-1 touches no
+qiskit-dependent path. Per-commit history (full / no-qiskit-file,
 all recomputed 2026-08-18): `03736da` 163/142 → LINK-1 `8b7ef46` 219/198 → LINK-2 `803f854`
 255/234 → LINK-3 `223d25c` 294/273 → LINK-4 `4df5b7f` 347/326 → LINK-5 `bdd73de` 389/368 →
-TWIN-1 `eeea12e` 414/393 → TWIN-2 `60ff5a1` 439/418 → LINK-6a `2763c24` 562/541 → LINK-6b `e3815c0` **622/601**. Default
+TWIN-1 `eeea12e` 414/393 → TWIN-2 `60ff5a1` 439/418 → LINK-6a `2763c24` 562/541 → LINK-6b `e3815c0` 622/601 → HYBRID-1 (this commit) **800/800** in this no-qiskit sandbox (the qiskit-extra full-environment count is not re-run here; per Rule 10 of the companion's review-driven validation additions, an un-rerun expected count is a stop-condition threshold, never evidence, so it is left unstated rather than computed by arithmetic). Default
 emission SHA-256 `3d1544027517197062097234d272ecbfbc03cd1864bbd0ee46169cf1250f1417` at every
 one of these commits (byte identity is environment-local — Mac arm64/numpy 2.4.6 vs cloud
 x86_64/numpy 2.4.4 differ at the ULP; the in-process parity tests are the portable oracle).
+HYBRID-1 adds no emitted-artifact path, so this hash is unaffected.
 
 `python src/qkd/run.py` still prints `Min loss 27.7 dB | Fidelity 0.990` (verified).
 `python src/qkd/run_fibre.py` prints
@@ -707,6 +719,22 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
 11. **ADR-0004 / HYBRID-0 Stage 0 — complete (2026-08-23).** ADR-0004 r3 is Accepted;
    its v3.1 companion is informative. This stage adds architecture and implementation
    contracts only: no schemas, policy engine, registry, KDF adapter, or PQC integration.
+12. **HYBRID-1 Stage 1 — complete (2026-08-24).** The boundary state model: tier-4-owned
+   `AttributionVerdict` / `DegradationAttributionEvidence` at
+   `src/qkd/adaptive/contracts.py` (D-H1-2, stdlib-only); the companion's exhaustive Stage 1
+   contract set (twelve dataclasses plus nine enums) at `src/qkd/hybrid/states.py`;
+   canonical envelope serialization and SHA-256 digests at `src/qkd/hybrid/serialization.py`
+   (D-H1-3: `{"record_type", "schema_version", "payload"}` envelope, sorted-key/
+   `ensure_ascii`/no-whitespace-variance encoding, exact `YYYY-MM-DDTHH:MM:SS.ffffffZ`
+   timestamp grammar, byte-exact loader round-trip guard); and the D3-pattern
+   `AlgorithmPostureRegistry` / digest-free `RegistrySnapshot` (digest is a computed
+   property, never a stored field, per C8) at `src/qkd/hybrid/registry.py`. No policy
+   engine, no KDF/cryptographic derivation, no authentication integration, no physics
+   coupling. `AssuranceDecision.policy_profile` is a recorded deviation from the companion
+   v3.1 schema listing (Echo blocker 1); the companion is reconciled to v3.2 in this same
+   commit (schema-listing addition + revision-log entry, nothing else). 199 new tests
+   across `tests/test_hybrid_states.py`, `tests/test_hybrid_registry.py`, and
+   `tests/test_hybrid_serialization.py`; zero regressions.
 
 **Open lanes (not yet sequenced; a sequencing decision is the next PI call):**
 - **Source consumption** — LINK-5 gate items 1–2 (`intensity_factor` into the estimator).
@@ -715,8 +743,9 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
   radiance/rate density and FOV signal cost before any advantage benchmark.
 - **Benchmark sweep driver** — `outputs/benchmark_*.json` producer, tied to the first real
   advantage claim (the QCC mapping memo / chosen advantage parameter).
-- **HYBRID Stage 1** — boundary dataclasses, serialization/schema validation, provenance,
-  and posture-registry snapshot contract; no cryptographic derivation.
+- **HYBRID Stage 2** — the policy engine: deterministic evaluation from evidence bundles
+  consuming Stage 1's boundary state model and registry snapshot interface; exhaustive
+  policy matrix tests; audit-event generation. No cryptographic derivation yet.
 - **TWIN-3** — finite-window power study (registered in the sequencing note).
 - **QCC proposal skeleton** — Project Overview / Scientific & Technical Approach /
   Performance Analysis & Benchmarking / Supporting Documentation, per the technical package;
@@ -743,6 +772,43 @@ version) before editing; enumerate entry points / artifact writers / consumers f
 ---
 
 ## Correction Log
+
+- **2026-08-24 (Rev 15, HYBRID-1 Stage 1).** Implemented against
+  `docs/HYBRID_1_PLAN.md` rev 6 (D-H1-1/2/3 confirmed by Echo, 2026-08-24), on
+  fresh-clone HEAD `d48cb2c`. Files created: `src/qkd/adaptive/__init__.py`,
+  `src/qkd/adaptive/contracts.py` (tier-4-owned, stdlib-only:
+  `AttributionVerdict`, `DegradationAttributionEvidence`);
+  `src/qkd/hybrid/__init__.py`, `src/qkd/hybrid/states.py` (nine enums, twelve
+  frozen dataclasses per the companion's C2 exhaustive Stage 1 contract set),
+  `src/qkd/hybrid/registry.py` (`AlgorithmPostureRegistry`, digest-free
+  `RegistrySnapshot`, D3 CI consistency check), `src/qkd/hybrid/serialization.py`
+  (generic canonical-envelope encoder/decoder driven by each dataclass's own
+  type hints, D-H1-3); `tests/test_hybrid_states.py`,
+  `tests/test_hybrid_registry.py`, `tests/test_hybrid_serialization.py`;
+  `tests/fixtures/hybrid_canonical_fixtures.json` and
+  `tests/fixtures/hybrid_non_canonical_physical_link_state.json`. Modified:
+  `README.md` (HYBRID lane status lines), this record (Revision 15), and
+  `docs/architecture/pqc_hybrid_architecture.md` (v3.2: `policy_profile` added
+  to the `AssuranceDecision` schema listing, plus the v3.2 revision-log entry —
+  nothing else; `git diff --stat` shows a five-line delta). Import-graph tests
+  confirm D-H1-1/2 by AST inspection: `adaptive/contracts.py` has zero
+  project-internal imports; `qkd.hybrid` imports only `qkd.adaptive.contracts`
+  and its own siblings, never a physics module; no module outside `qkd.hybrid`
+  imports it. Local validation (this sandbox, no qiskit extra):
+  `PYTHONPATH=src python3 -m pytest -q` → **800 passed, 1 skipped**; with
+  `--ignore=tests/test_teleportation_qiskit.py` → **800 passed**. Delta from
+  the Rev 14 baseline (601 passed + 1 skipped / 601 passed) is **+199 / +199**,
+  matching the three new test files' collected count exactly, zero regressions
+  elsewhere. The qiskit-extra full-environment count is not re-run in this
+  sandbox and is left unstated rather than computed by arithmetic (companion
+  review-driven validation item 10: expected/derived counts are stop-condition
+  thresholds, never evidence). `AssuranceDecision.policy_profile` is recorded
+  as a deliberate deviation from the companion v3.1 schema section (Echo
+  blocker 1), reconciled to v3.2 in this same commit per C7/C9 — no deferral.
+  `git status --short` after staging shows only the allowlisted HYBRID-1 paths
+  as new/modified; `docs/HYBRID_1_PLAN.md` itself is staged and committed per
+  C11 (this packet's own allowlist addition); `docs/LINK_7_PLAN.md` is not
+  present in this working tree and remains untouched either way.
 
 - **2026-08-23 (Rev 14 certification correction).** Commit C (`89f3952`) described its
   verification as "post-push certification." That verification was performed by Codex

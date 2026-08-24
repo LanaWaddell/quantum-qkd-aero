@@ -119,10 +119,13 @@ independently validated the composition rules it defines.
 
 Above the physics pipeline, **ADR-0004** (ratified 2026-08-23) defines a fourth,
 adaptive-coupling tier and a strict hybrid QKD+PQC boundary with separate physical and
-cryptographic evidence streams. **HYBRID-0 Stage 0 is complete as documentation only**:
-`docs/architecture/pqc_hybrid_architecture.md` is the informative companion, while its
-schemas, policy engine, registries, and hybrid derivation remain planned rather than
-implemented.
+cryptographic evidence streams. **HYBRID-0 Stage 0 is complete as documentation only**;
+**HYBRID-1 Stage 1 is complete**: `src/qkd/adaptive/contracts.py` and `src/qkd/hybrid/`
+implement the boundary's state model (enums, frozen dataclasses, validation, canonical
+serialization/digests, and the algorithm-posture registry snapshot interface) per
+`docs/architecture/pqc_hybrid_architecture.md`, the informative companion. The policy
+engine, KDF/cryptographic derivation, authentication integration, and physics coupling
+(Stages 2-5) remain planned rather than implemented.
 
 ## The medium-general channel layer (built & certified)
 
@@ -146,10 +149,10 @@ migration. The generalization was built and verified in sequence:
 
 **Next / active:** the **LINK lane** continues after LINK-6b with source consumption,
 receiver-aware Eve integration, and honest filter/background coupling before any
-benchmark advantage claim. **HYBRID Stage 1** may add boundary dataclasses and schema
-validation under ADR-0004, but no cryptographic derivation yet. Phase 2D remains a
-downstream reader of computed `PhysicsSignals`; no trust field enters the physics
-modules.
+benchmark advantage claim. **HYBRID Stage 2** (the policy engine) is next under
+ADR-0004, consuming Stage 1's boundary state model; no cryptographic derivation yet.
+Phase 2D remains a downstream reader of computed `PhysicsSignals`; no trust field
+enters the physics modules.
 
 ## Horizon
 
