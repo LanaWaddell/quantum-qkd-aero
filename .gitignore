@@ -9,3 +9,8 @@ node_modules/
 
 # Private strategy/positioning notes — never publish (competitive + defence-adjacent framing)
 docs/private/
+
+# Private disclosure/IP records — never publish
+DISCLOSURE_POLICY.md
+disclosure.md
+IP-overlap-register*
