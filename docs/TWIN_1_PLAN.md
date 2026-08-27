@@ -2,7 +2,7 @@
 
 **Status:** **v2 — APPROVED FOR IMPLEMENTATION** (Echo review 2026-08-11, "approve after targeted revision"; R1–R7 + amended proof obligations incorporated)
 **Date:** 2026-08-12 (plan v1 2026-08-12 per session clock; Echo review stamped 2026-08-11 — recorded, immaterial)
-**Governing records:** `NOTE-diffusion-kalman.md` v2.1 §6–§7; `NOTE-sequencing-2026-08-10.md` §2; `NOTE-qdish-alignment-2026-08-11.md` §1.
+**Governing records:** `NOTE-diffusion-kalman.md` v2.1 §6–§7; `NOTE-sequencing-2026-08-10.md` §2; and a private alignment note (gitignored, not in repo) §1.
 **Lane:** TWIN-* (Phase 2D diagnostic/research machinery; consumes no `EffectiveLinkState`, mission emission, or estimator internals). Baseline: LINK-5 @ `bdd73de`, 389 green (368+1 skip without qiskit).
 **Commit shape:** three files — `src/qkd/twin.py`, `tests/test_twin_whiteness.py`, `docs/TWIN_1_PLAN.md`.
 

@@ -683,10 +683,10 @@ Docs (Revs 13–17 additions): `docs/LINK_1_PLAN.md`…`LINK_5_PLAN.md`,
 `docs/LINK_6A_PLAN.md` (+ six `LINK_6A_*REVIEW.md`), `docs/LINK_6B_PLAN.md`
 (+ its review records), `docs/TWIN_1_PLAN.md`, `docs/TWIN_2_PLAN.md`,
 `docs/notes/NOTE-sequencing-2026-08-10.md` (normative lane sequencing),
-the Kalman note (v2.1, project KB — not in repo). **Private, gitignored, never pushed:**
-`docs/private/NOTE-qcc-track-alignment-2026-08-11.md` (Quantum City Challenge fibre-sensing
-track strategy; proposal due Nov 2026) and `docs/private/NOTE-qdish-alignment-2026-08-11.md`
-(defence-hub framing; private indefinitely) — the ignore rule itself is public (`5b530ca`).
+the Kalman note (v2.1, project KB — not in repo). Some working notes are held in a
+gitignored private directory and are never pushed; the ignore rule itself is public
+(`5b530ca`). Their contents do not bear on the physics substrate, the emission path, or
+any ratified architecture decision in this record.
 Docs: `docs/INTERFACES.md` (canonical v2 contract),
 `docs/architecture/ADR-0002-three-axis-quantum-link-model.md` (three-axis link frame),
 `docs/architecture/ADR-0003-composable-link-effect-pipeline.md` (ratified LINK contract),
