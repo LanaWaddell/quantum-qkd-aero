@@ -1,5 +1,32 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
+> **REVISION 18 — updated 2026-08-27 (MEM-0 external benchmark reconstruction; commit hash omitted pending post-push certification; see Correction Log).**
+> MEM-0 adds a standalone analytic reconstruction of the finite-key calculation published in
+> Gündoğan, Sidhu, Krutzik & Oi, *Optica Quantum* **2**(3), 140–147 (2024), together with its
+> benchmark artifact at `docs/benchmarks/BENCH-mem0-gundogan.md` — the project's first
+> claims-register entry. The module `src/qkd/mem0_gundogan.py` is deliberately outside the
+> authoritative emission pipeline: standard library plus NumPy only, pure functions, no RNG,
+> no seeds, no event simulation, no memory state machine, and no LINK/adaptive/hybrid/fixture
+> imports (enforced by an import-hygiene test). It implements no age-dependent memory model;
+> the published benchmark collapses storage time into the constants η_mem = 0.6 and a
+> storage-time-independent e_m, so MEM-0 is decoupled from the pending memory SPEC.
+>
+> **The benchmark is reported as an independent reconstruction, not a replication, and it is
+> not a passed benchmark.** The 2-QM cutoff and threshold behaviour reproduces within
+> predeclared tolerances under a source-backed inherited error-correction inefficiency
+> f_e = 1.16 (adopted from Luong et al., *Appl. Phys. B* **122**, 96 (2016), which the
+> benchmark paper cites and whose ε_m construction matches its Table 1; the benchmark paper
+> itself does not state f_e). Absolute key-length magnitudes and block counts remain low by
+> ≈3.5× against two mutually consistent source routes, and the 1-QM comparison remains
+> unreproduced because the published source-to-(n_Z, n_X) count path is not printed. A factor
+> ledger of eight physically interpretable counting conventions found none that is
+> source-defensible and reproduces both the 1-QM cutoff and the rate crossover. Acceptance
+> anchors were predeclared and are recorded as tested, never as selecting an interpretation;
+> the paper-anchor test family is withheld pending resolution rather than weakened. An author
+> query was sent 2026-08-27. Suite **966 with the Qiskit extra, 945 with the Qiskit-specific
+> file ignored** (+18 from Revision 17.1); default emission SHA-256 unchanged — **fourteenth**
+> consecutive change. Details in `docs/benchmarks/BENCH-mem0-gundogan.md`.
+
 > **REVISION 17 — updated 2026-08-24 (FIXTURE-1 + ADAPT-1; commit hash omitted pending post-push certification; see Correction Log).**
 > FIXTURE-1 adds a non-production quasiperiodic misalignment stress fixture and its
 > bounded finite-range discrepancy design note. ADAPT-1 implements ADR-0004 D1's passive

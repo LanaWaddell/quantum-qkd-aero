@@ -85,10 +85,17 @@ development record carries dated corrections rather than silently rewriting hist
   monitor records both component outcomes and applies a conservative operational OR mapping;
   it can report environmental consistency, unexplained degradation, or insufficient evidence,
   but never claims passive proof of an adversary.
+- **External benchmark reconstruction (MEM-0)** — a standalone analytic reconstruction of the
+  finite-key calculation published in Gündoğan et al., *Optica Quantum* 2(3), 140–147 (2024),
+  kept outside the emission pipeline. Its benchmark artifact reports an independent
+  reconstruction, not a replication: 2-QM cutoff behaviour reproduces under a source-backed
+  inherited f_e, while block-count magnitudes and the 1-QM comparison remain unreproduced
+  because the published count convention is not printed. It makes no claim about this
+  project's performance.
 - **Quasiperiodic stress fixture (FIXTURE-1)** — a non-production, nonphysical deterministic
   misalignment fixture for bounded finite-range sampling diagnostics; it is not admitted to the
   production stack or PDT allowlist.
-- A pytest suite (**948 with the Qiskit extra, 927 with the Qiskit-specific file ignored**) covering the physics and the
+- A pytest suite (**966 with the Qiskit extra, 945 with the Qiskit-specific file ignored**) covering the physics and the
   honesty guards (turbulence-independence, geometry coupling, decoy bounds,
   PNS-invisible-to-QBER, fidelity arch, fibre-contract flow, provenance enforcement,
   deep-schema goldens and mutation negatives, determinism).
