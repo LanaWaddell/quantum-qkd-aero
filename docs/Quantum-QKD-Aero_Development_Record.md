@@ -841,6 +841,41 @@ version) before editing; enumerate entry points / artifact writers / consumers f
 
 ## Correction Log
 
+- **2026-09-03 (Rev 19.1, post-push certification, Claude).** Verified on a fresh
+  public clone at `48ed81feaec92dfc72a6ca622610b3e740ee0768` (RECOH-1, packet
+  rev 2, base `215a876`): **970 passed** with
+  `--ignore=tests/test_teleportation_qiskit.py`; **991 passed** with the Qiskit
+  extra (qiskit 2.5.2 / qiskit-aer 0.17.2); **+25 / +25** from Rev 18's
+  945 / 966, matching the packet. `python src/qkd/run.py` →
+  `Min loss 27.7 dB | Fidelity 0.990`. Default emission SHA-256 in the
+  certifying environment `8c7cef94c756ce054ef120fdb18854788c9d040825fb66422d29e1a6ace9a6d5`,
+  **identical** to the same environment's Rev 18.1 measurement (byte identity
+  is environment-local; the implementer's local hash `1047ed1d…1bc4` was
+  likewise unchanged before/after). Exactly five files changed; import hygiene
+  holds; `choi_dephasing`/`dephase` validation split, R1 white-kernel identity,
+  OU monotonicity, zero backflow on free evolution, `NONE` classification, and
+  `recovery_fraction` failure behaviour exercised directly. Record deletions
+  audited: superseded Rev 15–18 headers and the Rev 17 suite paragraph moved
+  verbatim to the archived-snapshots block; no correction entry removed.
+  **RECOH-1 = `48ed81f`.** Rung-2 capability status unchanged (planned);
+  configuration names provisional; Gate A open; Gate B0 YES (PI, 2026-09-03).
+  Correction to the packet's explanatory text, credited to the implementer:
+  the truncated-series relative error at `x = 1e-3` is `x³/60 ≈ 1.7e-11`, not
+  `x/120`; the prescribed series and switch were unchanged.
+
+- **2026-09-03 (Rev 18.1, post-push certification, Claude — recorded with
+  Rev 19.1).** `e7cd918` (MEM-0) and `215a876` (docs: remove private note
+  filenames), with `4e3c1a1` between them, verified on a fresh public clone at
+  `215a876f12b3775998893fcdc6d4ed1475155e2f`: **945 passed** no-Qiskit,
+  **966 passed, 0 skipped** with the Qiskit extra, matching the Rev 18 body
+  (+18 from Rev 17.1's 927 / 948). Smoke test
+  `Min loss 27.7 dB | Fidelity 0.990`; emission SHA-256 in the certifying
+  environment `8c7cef94…9a6d5`. Discharges the Rev 18 header's "commit hash
+  omitted": **MEM-0 = `e7cd918`.** Registered follow-up (low priority, separate
+  bounded change with default-emission regression check): `pip install -e .`
+  modifies tracked `src/quantum_qkd_aero.egg-info/`; untrack generated
+  egg-info.
+
 - **2026-09-03 (Rev 19, RECOH-1 implementation and local validation).**
   Implemented the authorized five-file instrument change against clean main
   `215a876`: two isolated source modules, one 25-test calibration file, the
