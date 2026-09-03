@@ -1,69 +1,10 @@
 # Quantum-QKD-Aero — Technical Development Record (Phase 2B)
 
-> **REVISION 18 — updated 2026-08-27 (MEM-0 external benchmark reconstruction; commit hash omitted pending post-push certification; see Correction Log).**
-> MEM-0 adds a standalone analytic reconstruction of the finite-key calculation published in
-> Gündoğan, Sidhu, Krutzik & Oi, *Optica Quantum* **2**(3), 140–147 (2024), together with its
-> benchmark artifact at `docs/benchmarks/BENCH-mem0-gundogan.md` — the project's first
-> claims-register entry. The module `src/qkd/mem0_gundogan.py` is deliberately outside the
-> authoritative emission pipeline: standard library plus NumPy only, pure functions, no RNG,
-> no seeds, no event simulation, no memory state machine, and no LINK/adaptive/hybrid/fixture
-> imports (enforced by an import-hygiene test). It implements no age-dependent memory model;
-> the published benchmark collapses storage time into the constants η_mem = 0.6 and a
-> storage-time-independent e_m, so MEM-0 is decoupled from the pending memory SPEC.
->
-> **The benchmark is reported as an independent reconstruction, not a replication, and it is
-> not a passed benchmark.** The 2-QM cutoff and threshold behaviour reproduces within
-> predeclared tolerances under a source-backed inherited error-correction inefficiency
-> f_e = 1.16 (adopted from Luong et al., *Appl. Phys. B* **122**, 96 (2016), which the
-> benchmark paper cites and whose ε_m construction matches its Table 1; the benchmark paper
-> itself does not state f_e). Absolute key-length magnitudes and block counts remain low by
-> ≈3.5× against two mutually consistent source routes, and the 1-QM comparison remains
-> unreproduced because the published source-to-(n_Z, n_X) count path is not printed. A factor
-> ledger of eight physically interpretable counting conventions found none that is
-> source-defensible and reproduces both the 1-QM cutoff and the rate crossover. Acceptance
-> anchors were predeclared and are recorded as tested, never as selecting an interpretation;
-> the paper-anchor test family is withheld pending resolution rather than weakened. An author
-> query was sent 2026-08-27. Suite **966 with the Qiskit extra, 945 with the Qiskit-specific
-> file ignored** (+18 from Revision 17.1); default emission SHA-256 unchanged — **fourteenth**
-> consecutive change. Details in `docs/benchmarks/BENCH-mem0-gundogan.md`.
-
-> **REVISION 17 — updated 2026-08-24 (FIXTURE-1 + ADAPT-1; commit hash omitted pending post-push certification; see Correction Log).**
-> FIXTURE-1 adds a non-production quasiperiodic misalignment stress fixture and its
-> bounded finite-range discrepancy design note. ADAPT-1 implements ADR-0004 D1's passive
-> tier-4 attribution monitor: committed scalar references, exact-cadence synthetic traces,
-> separately calibrated TWIN-1 whiteness/NIS outcomes, a conservative operational OR
-> mapping, canonical adaptive records, and closed observable provenance metadata. Passive
-> monitoring never emits `ADVERSARIAL_SUSPECTED`; active attribution remains ADAPT-2.
-> Suite **948 full / 927 no-qiskit-file**, **+50/+50** from the tracked FIXTURE-1 baseline
-> of 898/877. No production physics, artifact writer, output schema, or default emission
-> path changed.
->
-> **REVISION 16 — updated 2026-08-24 (LINK-7 source consumption, `f8c82f2`; see Correction Log).**
-> LINK-7 consumes `source.intensity_factor` — the last deferred observable — completing the
-> ADR-0003 estimator boundary: every partition field now has an authorized consumer or an
-> explicit identity default. Robust decoy inversion under a hard certified common-mode bound
-> (complete-rate minimization with a single witness, certified 1-D minimizer, conservative
-> emission `R_certified = max(0, R_hat − ε)`); code-derived source-support gate (manifest echo
-> audit-only); manifest v3 with strict v1/v2/v3 matrix and Pre-Gate 0 v2 oracle; first-ever
-> `bb84.py` edit (pure statistics factoring, parity-certified). Suite **874 full / 853
-> no-qiskit-file** (853 + 1 skipped without qiskit); default emission SHA-256 unchanged —
-> **tenth** consecutive change. Details in `docs/LINK_7_PLAN.md` §15 and the Correction Log.
->
-> **REVISION 15 — updated 2026-08-24 (HYBRID-1 Stage 1 — boundary state model;
-> see Correction Log).** HYBRID-1 implements the ADR-0004 D2 hybrid QKD+PQC
-> boundary's **state model only**: tier-4-owned attribution contracts at
-> `src/qkd/adaptive/contracts.py` (`AttributionVerdict`,
-> `DegradationAttributionEvidence`, per D-H1-2) and the boundary's enums, frozen
-> dataclasses, validation, canonical serialization/digests, and the
-> algorithm-posture registry snapshot interface under `src/qkd/hybrid/`, per the
-> companion's Stage 1 contract checklist. No policy engine, KDF/cryptographic
-> derivation, authentication integration, or physics coupling — those remain
-> Stages 2–5. `AssuranceDecision` gains a `policy_profile` field beyond the
-> companion v3.1 schema listing (Echo blocker 1); the companion is reconciled to
-> v3.2 in this same commit (schema-listing addition + revision-log entry only).
-> The LINK architectural lane remains active with LINK-1 through LINK-6b
-> complete. Historical corrections and superseded counts/statuses remain in the
-> Correction Log.
+> **REVISION 19 — updated 2026-09-03 (RECOH-1 reference instrument).**
+> The stored-state and analytic dephasing instrument is complete. This revision
+> records its scope, calibration evidence, and remaining capability gates below.
+> Historical revision summaries and superseded validation counts are retained
+> in the dated Correction Log.
 
 **Scope of this document:** a phase-by-phase record of the Phase 2B physics build —
 what was implemented, how it was verified, the honesty guards in place, the file
@@ -117,8 +58,9 @@ stack that is evaluated on every call, new physics enters only as declared, type
 bridge-rejected observables until an estimator explicitly consumes them, and the first
 consumer (LINK-6a's QKD receiver model) does so through a declared control surface, a
 canonical replay manifest, and an unchanged `bb84.py`; LINK-6b then consumes timing
-jitter, Doppler offset, misalignment, and finally source intensity through that receiver
-path. In parallel the TWIN lane built
+jitter, Doppler offset, and misalignment. LINK-7 subsequently adds source-intensity
+consumption through that receiver path and factors the base statistics with parity
+checks. In parallel the TWIN lane built
 the digital-twin diagnostic substrate (reference Kalman twin, calibrated whiteness/NIS,
 private-probe watermark) whose central theorem — passive observation of an
 exactly-law-matched replacement is blind, and the blindness is gain-independent — is
@@ -170,16 +112,19 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **HYBRID-1** | Boundary state model: tier-4 attribution contracts, hybrid enums/dataclasses/validation, canonical serialization/digests, posture-registry snapshot | ✅ Stage 1 complete (2026-08-24) |
 | **FIXTURE-1** | Non-production quasiperiodic misalignment stress fixture and bounded finite-range discrepancy note | ✅ `4c8d817` (2026-08-24) |
 | **ADAPT-1** | Passive tier-4 attribution monitor over committed scalar references and synthetic traces | ✅ `8993d6c` (2026-08-24) |
+| **MEM-0** | Standalone finite-key benchmark reconstruction | Implemented; benchmark acceptance unresolved |
+| **RECOH-1** | Stored-state and analytic dephasing reference instrument | Complete (2026-09-03); not a rung-2 capability claim |
 
-**Test suite (current Rev 17 local `qkd_env` validation):** **948 passed**
-(`qkd_env/bin/python -m pytest -q`); excluding the Qiskit-specific file, **927 passed**
-(`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`). Delta from
-the tracked FIXTURE-1 baseline (**898/877**) is **+50/+50**, all in
-`tests/test_adaptive_monitor.py` and `tests/test_adaptive_canonical.py`; the v1.4.1 C5
-check was folded into the existing adaptive import-graph test, so the approved total
-remains 948. Earlier per-revision counts remain in the Correction Log. The default artifact
-is byte-identical to a clean `4c8d817` export in the same environment; cross-environment
-literal hashes are not portable, so in-process parity remains the portable oracle.
+**Test suite (current Rev 19 local `qkd_env` validation, 2026-09-03):**
+**991 passed** (`qkd_env/bin/python -m pytest -q`, 30.09 s);
+**970 passed** with the Qiskit-specific file excluded
+(`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`,
+29.72 s). Both configurations gained **25** tests over the verified
+`215a876` baseline of **966/945**; the delta matches the plan. All additions
+are in `tests/test_recoh1.py`; no existing test was edited. The environment
+was Python 3.13.12, NumPy 2.4.6, pytest 9.0.3, and Qiskit 2.4.1.
+The default artifact matches its same-environment pre-edit bytes; existing
+in-process parity tests remain the portable oracle, not a cross-environment hash.
 
 `python src/qkd/run.py` still prints `Min loss 27.7 dB | Fidelity 0.990` (verified).
 `python src/qkd/run_fibre.py` prints
@@ -637,6 +582,42 @@ fields extend it; values `None`; no emitted default-path field changed; no `.py`
 
 ---
 
+### MEM-0 / RECOH-1 — separate reference instruments
+
+MEM-0 remains a standalone finite-key benchmark reconstruction, not a passed
+replication. Its source-backed inherited error-correction factor is `f_e = 1.16`;
+the 2-QM cutoff/threshold anchors agree within predeclared tolerances, but absolute
+magnitudes remain low by approximately 3.5× and the 1-QM count path remains
+unresolved. The author query and factor ledger are preserved in
+`docs/benchmarks/BENCH-mem0-gundogan.md`. RECOH-1 neither imports this module
+nor claims to resolve those benchmark discrepancies.
+
+RECOH-1 calibrates an explicit stored qubit against ideal, Lindblad, and Gaussian
+white/OU pure-dephasing reference maps. The white kernel calls Lindblad directly.
+For OU, `D_phi = sigma² * tau_c` is held fixed in the white-noise limit;
+`kappa = exp[-D_phi * tau_c * g(t/tau_c)]`, with the approved stable
+`expm1`/short-time-series evaluation of `g`. Negative physical coherence
+factors are allowed in `dephase`, while the diagnostic, unnormalized Choi
+constructor also accepts finite nonphysical factors so CPTP checks can reject
+them. Choi trace is 2 and the output partial trace is the identity.
+
+`RecoveryClass` is a **derived output**, not a configured capability. A recovery
+label requires loss followed by a qualifying revival; endpoint improvement alone
+is protection. Backflow is discrete positive variation for a **preselected**
+state pair, not the maximized BLP measure, and cannot detect unsampled revivals.
+All supplied free-evolution models yield `NONE`; positive classifier self-checks
+use explicitly synthetic curves. The calibration suite covers density-matrix/Choi
+validity, white/short/long-time limits, stable OU evaluation, monotonicity,
+witnesses, classifier priority, invalid inputs, import/RNG isolation, emission
+parity, and negative-factor composition.
+
+Configuration vocabulary is **provisional** pending the memory SPEC amendment;
+reconciliation is a RECOH-2 obligation. No control sequence, nonmonotone physical
+model, stochastic trajectory, retrieval efficiency, production coupling, or
+schema extension is introduced.
+
+---
+
 ## 3. Module & contract inventory
 
 `src/qkd/`: `teleportation.py`, `chsh.py`, `channel.py`, `orbit.py`, `bb84.py`,
@@ -670,6 +651,15 @@ exact-cadence synthetic trace contract/generators, and passive TWIN-backed monit
 pre-extraction HYBRID bytes and digests remain fixture-pinned. `fixtures/quasiperiodic.py`
 is FIXTURE-1's non-production stress fixture and is neither production-wired nor PDT-admitted.
 
+**Standalone reference instruments (Revs 18–19):** `mem0_gundogan.py` is the finite-key
+benchmark reconstruction. `mem_state.py` adds frozen `StoredQubit`, `PLUS`/`MINUS`,
+density/Choi/CPTP helpers, `dephase`, and the three `kappa_*` functions.
+`recoh.py` adds L1 coherence, pure-target fidelity, trace distance, preselected-pair
+backflow, recovery fraction, and derived classification. Its sole local dependency is
+`qkd.mem_state`; both new modules otherwise use only stdlib and NumPy.
+`tests/test_recoh1.py` is the associated calibration suite. None is wired into
+production composition or an artifact writer.
+
 **Legacy decorative path — retired in PR0/2B-6a:**
 - `qkd_model.py` (repo root) — second entry point; deleted in PR0.
 - `teleportation.py::TeleportationMission`, `teleportation.py::build_teleportation_results`,
@@ -695,6 +685,8 @@ adaptive-coupling and hybrid-boundary decision),
 `docs/architecture/pqc_hybrid_architecture.md` (informative ADR-0004 companion),
 `docs/HYBRID_0_PLAN.md` (provenance-preserving Stage 0 execution record),
 `docs/ADAPT_1_PLAN.md` (v1.4.1 authorized execution packet),
+`docs/RECOH_1_PLAN.md` (v1.1 approved instrument contract and review provenance),
+`docs/benchmarks/BENCH-mem0-gundogan.md` (unresolved reconstruction claims register),
 `docs/notes/DN-quasiperiodic-misalignment.md` (FIXTURE-1 design note),
 `docs/architecture/quantum-qkd-aero-architecture-map.md` (architecture/status map),
 `docs/PR_D_SCHEMA_HARDENING.md` (active deep-validator contract),
@@ -789,20 +781,27 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
    property, never a stored field, per C8) at `src/qkd/hybrid/registry.py`. No policy
    engine, no KDF/cryptographic derivation, no authentication integration, no physics
    coupling. `AssuranceDecision.policy_profile` is a recorded deviation from the companion
-   v3.1 schema listing (Echo blocker 1); the companion is reconciled to v3.2 in this same
-   commit (schema-listing addition + revision-log entry, nothing else). 199 new tests
+   v3.1 schema listing (Echo blocker 1); HYBRID-1 reconciled the companion to v3.2
+   (schema-listing addition + revision-log entry, nothing else). 199 new tests
    across `tests/test_hybrid_states.py`, `tests/test_hybrid_registry.py`, and
    `tests/test_hybrid_serialization.py`; zero regressions.
 13. **FIXTURE-1 — complete (2026-08-24).** A non-production quasiperiodic misalignment
    fixture and 24-test stress program are preserved under `qkd.fixtures`; the fixture is
    absent from production composition and the PDT allowlist. Its design note limits
    discrepancy claims to the declared finite range and bounded-type structure.
-14. **ADAPT-1 — complete (2026-08-24; hash pending post-push certification).** The passive
+14. **ADAPT-1 — complete (2026-08-24); independently certified in Rev 17.1.** The passive
    tier-4 monitor evaluates exact-length synthetic scalar traces against digest-bound
    committed references using TWIN-1 whiteness/NIS components. It records both component
    outcomes, applies the declared conservative operational OR mapping, and never emits
    `ADVERSARIAL_SUSPECTED`. Canonical serialization was extracted to `qkd.canonical`; the
    HYBRID wrapper and all frozen HYBRID fixture bytes/digests remain unchanged.
+
+**Memory/recoherence gate state:** ADR-0003 §6 rung-2 remains **planned**.
+Gate A (Echo MEM-basis review) remains **open**; Gate B0 is **YES**
+(PI, 2026-09-03). RECOH-2 requires reconciliation of the provisional vocabulary
+to the memory SPEC and separate authorization for control sequences; RECOH-3
+nonmonotone physical models remain future work. MEM-0's unresolved benchmark
+anchors remain a separate follow-up, not satisfied by instrument calibration.
 
 **Open lanes (not yet sequenced; a sequencing decision is the next PI call):**
 - **Receiver-aware Eve** — through the LINK-6a R6 path; one canonical anomaly helper.
@@ -841,6 +840,132 @@ version) before editing; enumerate entry points / artifact writers / consumers f
 ---
 
 ## Correction Log
+
+- **2026-09-03 (Rev 19, RECOH-1 implementation and local validation).**
+  Implemented the authorized five-file instrument change against clean main
+  `215a876`: two isolated source modules, one 25-test calibration file, the
+  v1.1 plan of record, and this record. Baseline reruns produced **966 full /
+  945 no-Qiskit-file**; final runs produced **991 / 970**, **+25/+25**, matching
+  the approved delta. These are implementer-run local validations, not an
+  independent certification. No dependency installation, existing source/test
+  edit, README change, SPEC/ADR change, or output/schema addition was required.
+  The current local `outputs/results.json` SHA-256 before and after was
+  `1047ed1d722d04b856dc25056e0017c1584431a74f03c488611fdce3dcca1bc4`;
+  it is an environment-local comparison, not a replacement for historical
+  hashes or the portable in-process parity oracle. The console remained
+  `Dashboard Updated: Min loss 27.7 dB | Fidelity 0.990`.
+
+  Plan provenance: `claude_RECOH-1-plan.md` v1 (SHA-256
+  `c654ba43abed1e6d708980068e15cdf8add1b2dbbc12e753f7108bc1d78b835b`)
+  plus the PI-approved execution packet rev 2 (SHA-256
+  `eab6c4b7f7284821242d7710072d3c473ca221032b058e98c5419a79e9ec89cc`)
+  were folded into `docs/RECOH_1_PLAN.md` v1.1. C1-C4, R-a/R-b, the
+  composition test, and the Choi normalization/validation split are explicit.
+  The packet's explanatory series-error typo was corrected with PI approval:
+  the leading relative truncation error is `x³/60 ≈ 1.67e-11` at
+  `x = 1e-3`, not the earlier `x/120 ≈ 1e-5`; the prescribed series and
+  switch were not changed. High-precision Decimal checks now exercise the
+  stable helper independently. Gate B0 was recorded YES by the PI on this
+  date; Gate A remained open and rung-2 remained planned. This instrument
+  authorization does not imply that any memory capability gate was passed.
+
+  Record reconciliation: prior revision headers are preserved verbatim below
+  as historical snapshots, rather than presenting their counts as current.
+  The body had still described Rev 17's 948/927 tests despite the later
+  MEM-0 baseline; that superseded paragraph is archived below. MEM-0 is now
+  represented in the phase/module inventory without upgrading its benchmark
+  status. Source-intensity consumption is attributed to LINK-7, correcting
+  the through-line's previous attribution to LINK-6b. ADAPT-1's stale
+  “hash pending post-push certification” wording is removed from the current
+  next-steps body because the existing Rev 17.1 entry already certifies
+  `8993d6c`. HYBRID-1's “in this same commit” companion wording is now
+  explicitly historical to that phase. No prior correction entry is removed.
+
+### Historical revision-header snapshots (archived 2026-09-03)
+
+The following headers are retained as written at their revisions. Their
+counts, status wording, and emission-streak claims are historical statements,
+not the Rev 19 current-state summary.
+
+> **REVISION 18 — updated 2026-08-27 (MEM-0 external benchmark reconstruction; commit hash omitted pending post-push certification; see Correction Log).**
+> MEM-0 adds a standalone analytic reconstruction of the finite-key calculation published in
+> Gündoğan, Sidhu, Krutzik & Oi, *Optica Quantum* **2**(3), 140–147 (2024), together with its
+> benchmark artifact at `docs/benchmarks/BENCH-mem0-gundogan.md` — the project's first
+> claims-register entry. The module `src/qkd/mem0_gundogan.py` is deliberately outside the
+> authoritative emission pipeline: standard library plus NumPy only, pure functions, no RNG,
+> no seeds, no event simulation, no memory state machine, and no LINK/adaptive/hybrid/fixture
+> imports (enforced by an import-hygiene test). It implements no age-dependent memory model;
+> the published benchmark collapses storage time into the constants η_mem = 0.6 and a
+> storage-time-independent e_m, so MEM-0 is decoupled from the pending memory SPEC.
+>
+> **The benchmark is reported as an independent reconstruction, not a replication, and it is
+> not a passed benchmark.** The 2-QM cutoff and threshold behaviour reproduces within
+> predeclared tolerances under a source-backed inherited error-correction inefficiency
+> f_e = 1.16 (adopted from Luong et al., *Appl. Phys. B* **122**, 96 (2016), which the
+> benchmark paper cites and whose ε_m construction matches its Table 1; the benchmark paper
+> itself does not state f_e). Absolute key-length magnitudes and block counts remain low by
+> ≈3.5× against two mutually consistent source routes, and the 1-QM comparison remains
+> unreproduced because the published source-to-(n_Z, n_X) count path is not printed. A factor
+> ledger of eight physically interpretable counting conventions found none that is
+> source-defensible and reproduces both the 1-QM cutoff and the rate crossover. Acceptance
+> anchors were predeclared and are recorded as tested, never as selecting an interpretation;
+> the paper-anchor test family is withheld pending resolution rather than weakened. An author
+> query was sent 2026-08-27. Suite **966 with the Qiskit extra, 945 with the Qiskit-specific
+> file ignored** (+18 from Revision 17.1); default emission SHA-256 unchanged — **fourteenth**
+> consecutive change. Details in `docs/benchmarks/BENCH-mem0-gundogan.md`.
+
+> **REVISION 17 — updated 2026-08-24 (FIXTURE-1 + ADAPT-1; commit hash omitted pending post-push certification; see Correction Log).**
+> FIXTURE-1 adds a non-production quasiperiodic misalignment stress fixture and its
+> bounded finite-range discrepancy design note. ADAPT-1 implements ADR-0004 D1's passive
+> tier-4 attribution monitor: committed scalar references, exact-cadence synthetic traces,
+> separately calibrated TWIN-1 whiteness/NIS outcomes, a conservative operational OR
+> mapping, canonical adaptive records, and closed observable provenance metadata. Passive
+> monitoring never emits `ADVERSARIAL_SUSPECTED`; active attribution remains ADAPT-2.
+> Suite **948 full / 927 no-qiskit-file**, **+50/+50** from the tracked FIXTURE-1 baseline
+> of 898/877. No production physics, artifact writer, output schema, or default emission
+> path changed.
+>
+> **REVISION 16 — updated 2026-08-24 (LINK-7 source consumption, `f8c82f2`; see Correction Log).**
+> LINK-7 consumes `source.intensity_factor` — the last deferred observable — completing the
+> ADR-0003 estimator boundary: every partition field now has an authorized consumer or an
+> explicit identity default. Robust decoy inversion under a hard certified common-mode bound
+> (complete-rate minimization with a single witness, certified 1-D minimizer, conservative
+> emission `R_certified = max(0, R_hat − ε)`); code-derived source-support gate (manifest echo
+> audit-only); manifest v3 with strict v1/v2/v3 matrix and Pre-Gate 0 v2 oracle; first-ever
+> `bb84.py` edit (pure statistics factoring, parity-certified). Suite **874 full / 853
+> no-qiskit-file** (853 + 1 skipped without qiskit); default emission SHA-256 unchanged —
+> **tenth** consecutive change. Details in `docs/LINK_7_PLAN.md` §15 and the Correction Log.
+>
+> **REVISION 15 — updated 2026-08-24 (HYBRID-1 Stage 1 — boundary state model;
+> see Correction Log).** HYBRID-1 implements the ADR-0004 D2 hybrid QKD+PQC
+> boundary's **state model only**: tier-4-owned attribution contracts at
+> `src/qkd/adaptive/contracts.py` (`AttributionVerdict`,
+> `DegradationAttributionEvidence`, per D-H1-2) and the boundary's enums, frozen
+> dataclasses, validation, canonical serialization/digests, and the
+> algorithm-posture registry snapshot interface under `src/qkd/hybrid/`, per the
+> companion's Stage 1 contract checklist. No policy engine, KDF/cryptographic
+> derivation, authentication integration, or physics coupling — those remain
+> Stages 2–5. `AssuranceDecision` gains a `policy_profile` field beyond the
+> companion v3.1 schema listing (Echo blocker 1); the companion is reconciled to
+> v3.2 in this same commit (schema-listing addition + revision-log entry only).
+> The LINK architectural lane remains active with LINK-1 through LINK-6b
+> complete. Historical corrections and superseded counts/statuses remain in the
+> Correction Log.
+
+**Superseded Rev 17 current-suite paragraph (archived verbatim):**
+
+**Test suite (current Rev 17 local `qkd_env` validation):** **948 passed**
+(`qkd_env/bin/python -m pytest -q`); excluding the Qiskit-specific file, **927 passed**
+(`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`). Delta from
+the tracked FIXTURE-1 baseline (**898/877**) is **+50/+50**, all in
+`tests/test_adaptive_monitor.py` and `tests/test_adaptive_canonical.py`; the v1.4.1 C5
+check was folded into the existing adaptive import-graph test, so the approved total
+remains 948. Earlier per-revision counts remain in the Correction Log. The default artifact
+is byte-identical to a clean `4c8d817` export in the same environment; cross-environment
+literal hashes are not portable, so in-process parity remains the portable oracle.
+
+### Earlier correction entries
+
 
 - **2026-08-24 (Rev 17.1, post-push certification, Claude).** Both commits verified on a
   fresh clone of the public remote at HEAD `8993d6c` (`4c8d817` FIXTURE-1 → `8993d6c`
