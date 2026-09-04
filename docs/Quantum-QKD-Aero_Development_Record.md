@@ -841,6 +841,31 @@ version) before editing; enumerate entry points / artifact writers / consumers f
 
 ## Correction Log
 
+- **2026-09-03 (Rev 19.2, SPEC ratification companion, Claude).** The memory-arm
+  degradation SPEC (`docs/architecture/SPEC-memory-lifetime-adr0003.md`) is
+  **ratified** (PI, two-commit protocol: ratification commit carries the SPEC
+  only; this entry is the companion). Gate A — Echo's adversarial review of the
+  DN/SPEC/RN MEM basis, the outstanding gate registered since 2026-08-26 — is
+  **closed** (review SHA-256 `ab1f7ba16b8775d2080c7a71ee3be3a38fcec96aa7359fe2742b618d58aca5c4`;
+  v0.3 reconciliation + v0.3.1 fix; Echo confirmation). Surface of record: three
+  independent degradation axes (`dephasing_model: identity_state_evolution |
+  lindblad_phase_damping | gaussian_frequency_noise`; `memory_error_model:
+  constant | derived_from_state`; `retrieval_decay_model`), two immutable
+  source-backed benchmark profiles (`gundogan-2024-2QM`, `paterson-2026-fidelity`),
+  parameters separated from event realizations, deterministic-ensemble-map vs
+  seeded-trajectory rule stated. `ideal` renamed `identity_state_evolution` at
+  ratification (PI); RECOH-1's `kappa_ideal` function name is unchanged and the
+  mapping is recorded in the RECOH-2 docstring pass, which also discharges the
+  "provisional" marking on `dephasing_model`, `noise_kernel`, `D_phi`, `tau_c`.
+  Corrected on the way in: v0.1/v0.2's statement that fidelity is bounded above
+  by coherence (false: `F = (1+C)/2 > C`). Scheduling-policy exclusion recorded
+  in SPEC §4. **Process decision (PI):** the separate-session fresh-eyes rule is
+  tiered — required for ADRs and ADR amendments; for SPECs and plans a genuine
+  break between review and ratification suffices. ADR-0003 Amendment A1
+  (rung-2 placement) remains a provisional draft and now enters its dedicated
+  two-round review under the ADR tier. Rung-2 capability status unchanged
+  (**planned**). Suite unchanged (docs only): 970 / 991.
+
 - **2026-09-03 (Rev 19.1, post-push certification, Claude).** Verified on a fresh
   public clone at `48ed81feaec92dfc72a6ca622610b3e740ee0768` (RECOH-1, packet
   rev 2, base `215a876`): **970 passed** with
