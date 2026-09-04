@@ -8,6 +8,19 @@ link types slot in without re-architecture.
 
 What distinguishes the project is **how** it is built, not just what it computes.
 
+## Positioning
+
+Several mature satellite-QKD simulation tools exist, and this project does not try to
+replace them: where an established tool already defines a quantity (finite-key
+parameterization, memory-capacity crossover ν_c, pass-duration-versus-key figures), this
+project adopts that vocabulary so its outputs are comparable rather than parallel.
+What this project adds is an **enforced boundary** (`docs/architecture/ADR-0002`) between a
+verified physics substrate and any higher-level adaptive or trust layer: nothing above the
+wall reaches into the physics, and the physics publishes only computed observables upward.
+That boundary, together with the provenance and single-writer invariants below, is the
+contribution; the physics itself is standard and is validated against published results
+rather than against the project's own baselines.
+
 ## What makes this different: verified, not decorative
 
 Every quantity that drives the simulation is **computed from first principles and checked
@@ -92,10 +105,22 @@ development record carries dated corrections rather than silently rewriting hist
   inherited f_e, while block-count magnitudes and the 1-QM comparison remain unreproduced
   because the published count convention is not printed. It makes no claim about this
   project's performance.
+- **Memory-arm degradation surface and recoherence instrument (SPEC + RECOH-1)** — a
+  ratified specification (`docs/architecture/SPEC-memory-lifetime-adr0003.md`) separates
+  memory *state evolution*, *estimator error*, and *retrieval efficiency* into three
+  independent axes with source-backed benchmark profiles, because the two published memory
+  models it validates against place age dependence on different quantities. RECOH-1
+  (`mem_state.py`, `recoh.py`) implements the stored-qubit state, analytic pure-dephasing
+  maps (identity, Lindblad, Gaussian white/OU) with CPTP checks, and the predeclared
+  witnesses (coherence, fidelity, grid-resolved trace-distance backflow, recovery fraction)
+  plus a *derived* recovery classification. It is an **instrument, not a result**: on every
+  model it contains the classifier can only return "none", Markovianity is never configured,
+  and the project's vocabulary rule (`ADR-0003 §6`) still records rung-2 recoherence as
+  *planned*, not demonstrated.
 - **Quasiperiodic stress fixture (FIXTURE-1)** — a non-production, nonphysical deterministic
   misalignment fixture for bounded finite-range sampling diagnostics; it is not admitted to the
   production stack or PDT allowlist.
-- A pytest suite (**966 with the Qiskit extra, 945 with the Qiskit-specific file ignored**) covering the physics and the
+- A pytest suite (**991 with the Qiskit extra, 970 with the Qiskit-specific file ignored**) covering the physics and the
   honesty guards (turbulence-independence, geometry coupling, decoy bounds,
   PNS-invisible-to-QBER, fidelity arch, fibre-contract flow, provenance enforcement,
   deep-schema goldens and mutation negatives, determinism).
@@ -164,8 +189,13 @@ migration. The generalization was built and verified in sequence:
   distance curve** with **maximum secure distance** (~190 km on the default illustrative
   fibre) as the figure of merit.
 
-**Next / active:** the **LINK lane** continues after LINK-7 with receiver-aware Eve
-integration and honest filter/background coupling before any benchmark advantage claim.
+**Next / active:** the **RECOH lane** proceeds by a fixed ladder — RECOH-2 (declared
+active rephasing on the stored state), RECOH-3 (optional; independently witnessed
+intrinsic backflow, only with a platform-justified model), RECOH-4 (coupling the recovered
+state into the finite-key path) — and a rung-2 claim is permitted only after an amendment to
+`ADR-0003 §6` is ratified through the project's two-round review. The **LINK lane**
+continues after LINK-7 with receiver-aware Eve integration and honest filter/background
+coupling before any benchmark advantage claim.
 **ADAPT-2** is the future active-probe/watermark attribution lane. **HYBRID Stage 2** (the
 policy engine) consumes Stage 1's boundary state model only when sequenced; no
 cryptographic derivation exists yet.
@@ -205,7 +235,7 @@ Run the simulator (writes `outputs/results.json` and the pass plot):
 python src/qkd/run.py
 ```
 
-Run the test suite — **927 tests with the Qiskit-specific file ignored, or 948 with the
+Run the test suite — **970 tests with the Qiskit-specific file ignored, or 991 with the
 Qiskit extra installed**:
 
 ```
@@ -224,8 +254,9 @@ npm start
 Active code is in `src/qkd/`: the medium/physics modules (`channel.py`, `fibre.py`,
 `orbit.py`, `teleportation.py`, `chsh.py`, `bb84.py`, `eve.py`, `coherence.py`); the
 LINK/TWIN modules (`link.py`, `effects.py`, `detection.py`, `replay.py`, `benchmark.py`,
-`twin.py`, `twin_watermark.py`); the passive adaptive monitor in `adaptive/`, the hybrid
-boundary model in `hybrid/`, schema-neutral canonical serialization in `canonical.py`, and
+`twin.py`, `twin_watermark.py`); the memory-arm instruments (`mem_state.py`, `recoh.py`)
+and the standalone benchmark reconstruction (`mem0_gundogan.py`); the passive adaptive
+monitor in `adaptive/`, the hybrid boundary model in `hybrid/`, schema-neutral canonical serialization in `canonical.py`, and
 the non-production stress fixtures in `fixtures/`; and `mission.py` (composition), `provenance.py`
 (enforced origin tags), `signals.py` (interface dataclasses), `run.py` / `run_fibre.py`
 (I/O), and `schema.py`. The dashboard is in `dashboard.js`; tests in `tests/`.
