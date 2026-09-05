@@ -1,6 +1,7 @@
 # ADR-0003 — Composable Link-Effect Pipeline and Geometry-Aware Channel Modeling
 
-**Status:** RATIFIED — 2026-07-17 (PI: Lana). Body unchanged from the
+**Status:** RATIFIED — 2026-07-17 (PI: Lana); **Amendment A1 (§6, rung-2
+placement) RATIFIED — 2026-09-05 (PI: Lana)**. Body unchanged from the
 2026-07-05 RATIFICATION-READY text; ratified as-is following independent
 literature contact (see status log).
 **Status log** (dates evidence-backed: review-thread timestamps via Echo;
@@ -33,6 +34,16 @@ This is a new lane; it does not reuse or extend the PR-A/B/C/D identifiers.
 between *modeling decoherence* and *designing coherence-preserving
 interventions* — via the intervention surface (§3.6) and the coherence-recovery
 boundary (§6). It defines what "recoherence" may honestly mean on this substrate.
+- 2026-09-03 → 2026-09-05 — **Amendment A1 (§6 rung-2 placement):** drafted (Claude) from
+  RECOH-0 v0.2; v0.2 after Gate A disposition 11 (implementation enum name
+  removed); Echo architecture review Round 1 (`c78a6406…bcf4769`: retain and
+  revise, six required items) → v0.3; Echo Round 2 (`fc25d1ae…`): PASS; PI
+  fresh-eyes read in a separate session (2026-09-05); **RATIFIED** 2026-09-05 (PI). Rung-2 placement
+  adopted per A1. At ratification no certified implementation had earned
+  rung 2; live implementation capability is tracked in the Development
+  Record. Foundation: SPEC-memory-lifetime-adr0003 (ratified `81c97ed`),
+  RECOH-1 (`48ed81f`). §6 rung-2 line replaced and placement paragraph
+  appended; all other sections unchanged.
 
 ---
 
@@ -344,10 +355,48 @@ language conflates, and they form a clean ladder:
 
 1. **Improving the accepted ensemble** — selection/post-selection. *In scope
    now* (LINK).
-2. **Restoring the individual physical state** — true recoherence on a single
-   carrier. *Not expressible here, and not claimed.*
+2. **State recovery / recoherence** — a declared property of a stored quantum
+   state or quantum-memory excitation is physically restored after prior
+   loss, without obtaining the claimed improvement solely through selection
+   or post-selection of a more favourable subensemble. A *recoherence* claim
+   specifically requires recovery in a coherence-sensitive quantity, or
+   independent evidence that the recovered state-quality loss arose from
+   decoherence rather than coherent unitary evolution. *Not expressible in the
+   LINK / free-carrier substrate. Expressible on the memory arm only under the
+   conditions in the rung-2 placement paragraph below (Amendment A1).*
 3. **Concentrating entanglement across multiple resources** — purification /
    distillation. *Topology-axis future* (repeater members).
+
+**Rung-2 placement (Amendment A1, ratified 2026-09-05).** Rung 2 remains
+unavailable in LINK / free-carrier abstractions, which carry no stored-state
+representation. It may be expressed on the memory arm only where (a) an
+explicit stored quantum-state or quantum-memory-excitation representation
+exists that is adequate to the physical memory model under test and sufficient
+to evaluate the predeclared recovery witness, and (b) a predeclared recovery
+witness demonstrates physical recovery after prior loss — a decrease followed
+by an increase in the declared state-quality measure. Loss and recovery are
+evaluated with the same declared measure and the same conditioning convention.
+Where a controlled recovery is claimed, the controlled trajectory is
+interpreted against a matched free-evolution comparator under the same
+physical model. Conditioning alone cannot establish rung 2: if the witness is
+conditioned on a heralded or probabilistic outcome, the conditioning rule and
+success probability are reported, and conditional improvement by itself does
+not earn the claim.
+
+Active rephasing (a declared control operation on the stored state) and
+environment-mediated backflow (recovery under free evolution, independently
+witnessed) are distinct mechanisms and are reported as such; neither is
+inferred from the other. Current capability is implementation-dependent and is
+recorded per certified implementation in the Development Record, which is the
+sole authority for it; capability is not inferred from the existence of a
+state model, a dephasing model, or a control option alone. Endpoint
+improvement without a witnessed loss-then-increase is coherence protection,
+not state recovery or recoherence. The topology-axis placement of rung 3 is
+unchanged; a memory arm expressing rung 2 does not pre-build repeater
+topology. Anything above the physics layer may consume the published typed
+recovery result as an observable and may not redefine it (ADR-0002 wall, both
+directions); the result's implementation name lives in the memory SPEC and
+RECOH plans, below this ADR.
 
 **The rule:** documentation, papers, and proposals must not describe rung 1 as
 "recoherence" (rung 2) or as entanglement concentration (rung 3). The honest
