@@ -114,15 +114,22 @@ repeatedly caught real errors (including several of Claude's own, and this one).
 | **ADAPT-1** | Passive tier-4 attribution monitor over committed scalar references and synthetic traces | ✅ `8993d6c` (2026-08-24) |
 | **MEM-0** | Standalone finite-key benchmark reconstruction | Implemented; benchmark acceptance unresolved |
 | **RECOH-1** | Stored-state and analytic dephasing reference instrument | Complete (2026-09-03); not a rung-2 capability claim |
+| **RECOH-2** | Active rephasing (ideal pi-pulse) on the single-qubit stored-state reference model | Complete (2026-09-05); **rung 2 earned** on the certified reference claim only |
 
-**Test suite (current Rev 19 local `qkd_env` validation, 2026-09-03):**
-**991 passed** (`qkd_env/bin/python -m pytest -q`, 30.09 s);
-**970 passed** with the Qiskit-specific file excluded
-(`qkd_env/bin/python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`,
-29.72 s). Both configurations gained **25** tests over the verified
-`215a876` baseline of **966/945**; the delta matches the plan. All additions
-are in `tests/test_recoh1.py`; no existing test was edited. The environment
-was Python 3.13.12, NumPy 2.4.6, pytest 9.0.3, and Qiskit 2.4.1.
+**Test suite (current Rev 20, 2026-09-05):**
+**1009 passed** with the Qiskit-specific file excluded
+(`python -m pytest -q --ignore=tests/test_teleportation_qiskit.py`, 38.7 s),
+verified in a sandboxed shell (Python 3.10.12, NumPy 2.2.6, pytest 9.1.1;
+`qkd_env` itself is a macOS venv unreachable from that shell). This gained
+**+39** tests over the Rev 19.3 no-Qiskit baseline of **970** (planning
+estimate was ≈36; the extra 3 are additional evaluator edge-case obligations
+split out during implementation, no scope change). All additions are in
+`tests/test_recoh2.py`; `tests/test_recoh1.py`'s 25 tests pass unchanged
+except the one authorized edit (test 18's PROVISIONAL notice, discharged
+below). **The full-environment count (with the Qiskit extra, expected 991 +
+39 = 1030 since RECOH-2 touches neither `qkd.effects` nor the Qiskit
+teleportation path) was not independently re-verified in `qkd_env` for this
+revision — confirm it there before push.**
 The default artifact matches its same-environment pre-edit bytes; existing
 in-process parity tests remain the portable oracle, not a cross-environment hash.
 
@@ -796,12 +803,17 @@ Active sequence history/spec: `docs/PHASE_2B6_SEQUENCE.md`. Two-phase Codex gate
    `ADVERSARIAL_SUSPECTED`. Canonical serialization was extracted to `qkd.canonical`; the
    HYBRID wrapper and all frozen HYBRID fixture bytes/digests remain unchanged.
 
-**Memory/recoherence gate state:** ADR-0003 §6 rung-2 remains **planned**.
-Gate A (Echo MEM-basis review) remains **open**; Gate B0 is **YES**
-(PI, 2026-09-03). RECOH-2 requires reconciliation of the provisional vocabulary
-to the memory SPEC and separate authorization for control sequences; RECOH-3
-nonmonotone physical models remain future work. MEM-0's unresolved benchmark
-anchors remain a separate follow-up, not satisfied by instrument calibration.
+**Memory/recoherence gate state:** ADR-0003 §6 rung 2 is **earned — active
+rephasing — on the single-qubit ideal-pulse reference model** (RECOH-2,
+2026-09-05; noise-averaged reduced state; Gaussian-OU noise; ideal pi-pulse
+at tau; witness `C_l1`; purity identity guard passed; matched comparator
+constructed from the model; unconditioned; `R` at `t_peak` and at 2*tau both
+reported). Not claimed: environmental backflow; rung 2 for ensemble/platform
+memories; finite-pulse behaviour. This Development Record is the sole
+authority for that status. Provisional-name marking on RECOH-1/RECOH-2
+vocabulary is discharged (test 18 amendment, below). RECOH-3 nonmonotone
+physical models remain future work. MEM-0's unresolved benchmark anchors
+remain a separate follow-up, not satisfied by instrument calibration.
 
 **Open lanes (not yet sequenced; a sequencing decision is the next PI call):**
 - **Receiver-aware Eve** — through the LINK-6a R6 path; one canonical anomaly helper.
@@ -840,6 +852,46 @@ version) before editing; enumerate entry points / artifact writers / consumers f
 ---
 
 ## Correction Log
+
+- **2026-09-05 (Rev 20, RECOH-2 active rephasing, Claude Code/Sonnet).** RECOH-2
+  earns **rung 2, mechanism `ACTIVE_REPHASING`**, on the single-qubit
+  ideal-pulse reference model declared in `docs/RECOH_2_PLAN.md`: a stored
+  qubit with Bloch vector `r0` (certified for `|+>`), zero-mean stationary
+  Gaussian-OU frequency noise, no deterministic precession, and an ideal
+  instantaneous pi-pulse about the storage-basis X axis at predeclared `tau`.
+  The noise-averaged reduced state's `C_l1(t)` decreases under free evolution
+  and, after the pulse, increases to a predicted echo maximum exceeding the
+  matched free comparator at the predeclared read times (`t_peak` and
+  `2*tau`); the recovered fraction is reported; nothing is conditioned. The
+  purity-identity guard (`P(t) = [1 + rz0^2 + C_l1(t)^2]/2`) passed on both
+  trajectories. **Not claimed:** environmental backflow; rung 2 for
+  ensemble/platform memories; finite-pulse behaviour; key rate. Added
+  `EchoModel`, `pi_pulse_x`, `purity`, `echo_h`, `echo_F`, `var_free`,
+  `var_ctrl`, `echo_peak_time`, `stored_state_at`, `evolve` to
+  `src/qkd/mem_state.py`; `RecoveryStatus`, `GuardStatus`, `GuardResult`,
+  `RecoveryReport`, `echo_grid`, `purity_guard`, `recovery_report` to
+  `src/qkd/recoh.py`; `tests/test_recoh2.py` (39 tests, ≈36 planned);
+  `docs/RECOH_2_PLAN.md`. Reconciled both modules' docstrings to the ratified
+  SPEC-memory-lifetime-adr0003 notice (`81c97ed`), discharging the
+  PROVISIONAL marking; `kappa_ideal` corresponds to `identity_state_evolution`.
+  **RECOH-1 test 18 amendment (rev 1.2, implementer-flagged and PI-authorized):**
+  RECOH-1's `test_18` froze the PROVISIONAL sentence verbatim, which the SPEC
+  ratification and this reconciliation would otherwise have to remove,
+  blocking the very step the sentence named as required. Resolution: the
+  `notice` string constant in that test was replaced with the ratified-SPEC
+  notice and the test renamed `test_18_import_hygiene_and_ratified_spec_notice`;
+  no other line of `tests/test_recoh1.py` changed; its 25 tests pass
+  unchanged; the diff to that file is exactly those two edits (verified via
+  `git diff tests/test_recoh1.py`). Test suite: **1009 passed** with the
+  Qiskit extra excluded (+39 over the Rev 19.3 no-Qiskit baseline of 970;
+  see the Test suite section above for the environment caveat on the
+  full-env count). Review chain: Echo reviews `972042011cd0f4af…`,
+  `97a94818b33fb9ce…`, `85c73c75386b4ae4…`, `7a226e60043be3a8…`; packet
+  confirmation PASS on the Codex-addressed text (`4eca63e3c67e9167…`);
+  rev 1.1 re-addressed to Claude Code (Sonnet); rev 1.2 resolved the test-18
+  contradiction and pinned the fidelity report contract. The current-status
+  line for rung 2 changes from "no certified implementation has earned rung 2"
+  (Rev 19.3, below) to this bounded claim. Status authority: this record.
 
 - **2026-09-05 (Rev 19.3, ADR-0003 Amendment A1 companion, Claude).** ADR-0003 §6
   is amended (Amendment A1, rung-2 placement) and **ratified** (PI, ADR tier:

@@ -254,11 +254,12 @@ def test_17_endpoint_improvement_is_protection_and_recovery_fraction_is_unclampe
             recovery_fraction(*args)
 
 
-def test_18_import_hygiene_and_provisional_configuration_notice():
+def test_18_import_hygiene_and_ratified_spec_notice():
     forbidden = ("qkd.effects", "qkd.link", "qkd.adaptive", "qkd.hybrid", "qkd.fixtures",
                  "qkd.mission", "qkd.schema", "qkd.mem0_gundogan", "numpy.random", "random")
-    notice = ("Configuration names in this module are PROVISIONAL pending the memory SPEC\n"
-              "amendment (RECOH-0 v0.2 §4); reconciliation is a RECOH-2 obligation.")
+    notice = ("Configuration names in this module (`dephasing_model`, `noise_kernel`, `D_phi`,\n"
+              "`tau_c`) follow SPEC-memory-lifetime-adr0003 (ratified 2026-09-03, `81c97ed`);\n"
+              "`kappa_ideal` corresponds to `identity_state_evolution`.")
     for path in MODULE_PATHS:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         assert notice in ast.get_docstring(tree)
