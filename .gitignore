@@ -4,7 +4,7 @@ __pycache__/
 outputs/
 .cache/
 node_modules/
-.DS_Store*.egg-info/
+*.egg-info/
 .DS_Store
 
 # Private strategy/positioning notes — never publish (competitive + defence-adjacent framing)
