@@ -841,6 +841,28 @@ version) before editing; enumerate entry points / artifact writers / consumers f
 
 ## Correction Log
 
+- **2026-09-05 (Rev 19.3, ADR-0003 Amendment A1 companion, Claude).** ADR-0003 §6
+  is amended (Amendment A1, rung-2 placement) and **ratified** (PI, ADR tier:
+  two Echo rounds — Round 1 `c78a6406…bcf4769` retain-and-revise, Round 2
+  `fc25d1ae…` PASS — PI fresh-eyes read in a separate session on 2026-09-05, two-commit
+  ratification; the ratification commit carries the ADR only, this entry is the
+  companion). Rung 2 is now *expressible on the memory arm* under conditions:
+  representation adequate to the claim and witness; predeclared witness showing
+  loss-then-increase in the same declared measure under the same conditioning
+  convention; matched free-evolution comparator for controlled recovery;
+  conditioning alone cannot establish the claim (rule and success probability
+  reported); *recoherence* requires a coherence-sensitive witness or independent
+  evidence that the loss was decoherence — fixed-target fidelity recurrence
+  under coherent unitary evolution earns at most *state recovery*; active
+  rephasing and environment-mediated backflow are distinct mechanisms. The
+  Development Record is the **sole live authority** for rung-2 capability
+  status. **Current status: no certified implementation has earned rung 2.**
+  RECOH-1 (`48ed81f`) satisfies condition (a) for the single-qubit reference
+  claim it models and for nothing more; its classifier can return only `NONE`.
+  RECOH-2 packet is now authorized to be drafted under the ratified placement
+  rules; its recoherence witness must be `coherence_l1`, not
+  `pure_target_fidelity` alone. Suite unchanged (docs only): 970 / 991.
+
 - **2026-09-03 (Rev 19.2, SPEC ratification companion, Claude).** The memory-arm
   degradation SPEC (`docs/architecture/SPEC-memory-lifetime-adr0003.md`) is
   **ratified** (PI, two-commit protocol: ratification commit carries the SPEC
