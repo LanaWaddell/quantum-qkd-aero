@@ -126,10 +126,9 @@ estimate was ≈36; the extra 3 are additional evaluator edge-case obligations
 split out during implementation, no scope change). All additions are in
 `tests/test_recoh2.py`; `tests/test_recoh1.py`'s 25 tests pass unchanged
 except the one authorized edit (test 18's PROVISIONAL notice, discharged
-below). **The full-environment count (with the Qiskit extra, expected 991 +
-39 = 1030 since RECOH-2 touches neither `qkd.effects` nor the Qiskit
-teleportation path) was not independently re-verified in `qkd_env` for this
-revision — confirm it there before push.**
+below). **1030 passed** with the Qiskit extra installed (standard `pytest`; +39 over
+the Rev 19.3 full-environment baseline of 991), confirmed in `qkd_env` by the
+PI before push and on a fresh public clone at post-push certification (Rev 20.1).
 The default artifact matches its same-environment pre-edit bytes; existing
 in-process parity tests remain the portable oracle, not a cross-environment hash.
 
@@ -852,6 +851,39 @@ version) before editing; enumerate entry points / artifact writers / consumers f
 ---
 
 ## Correction Log
+
+- **2026-09-05 (Rev 20.1, post-push certification, Claude).** RECOH-2 verified on
+  a fresh public clone at `d323c571ce42b5b83b8191eef93b872068c857e7` (base
+  `75bf955`): **1009 passed** with `--ignore=tests/test_teleportation_qiskit.py`;
+  **1030 passed** with the Qiskit extra (qiskit 2.5.2 / qiskit-aer 0.17.2);
+  **+39 / +39** over 970 / 991, matching the PI's `qkd_env` run (1009 / 1030) and
+  the implementer's no-Qiskit count. The Rev 20 body's "not independently
+  re-verified in `qkd_env`" caveat on the full-environment count is discharged
+  and the body sentence replaced in this revision. Smoke test
+  `Min loss 27.7 dB | Fidelity 0.990`; emission SHA-256 in the certifying
+  environment `8c7cef94c756ce054ef120fdb18854788c9d040825fb66422d29e1a6ace9a6d5`,
+  unchanged across every certification since Rev 18.1. Diff audited: exactly
+  the six authorized files; `tests/test_recoh1.py` diff is the `notice`
+  constant and the test-18 rename only. Rung-2 path exercised directly on the
+  reference model: `AVAILABLE` / `ACTIVE_REPHASING` / `valid = True`;
+  `t_peak = 4.1497066`, `R_peak = 0.2881456`, `R_2tau = 0.1716236`;
+  `backflow_free = 0.0`; purity guard `PASSED`; `fidelity["2tau"] = (1 + C_ctrl(2τ))/2`.
+  White-kernel control: `NO_PEAK` / `NONE` / `R_2tau = 0.0`. Underflow policy:
+  `echo_h(1e-120) = 0.0`, `echo_h(1e-4) = 8.33e-14 > 0`. **RECOH-2 = `d323c57`.**
+  Certified claim, verbatim from the packet's predeclared wording: **rung 2
+  earned — active rephasing — on the single-qubit ideal-pulse reference model**
+  (noise-averaged reduced state; Gaussian-OU noise; ideal π-pulse at τ; witness
+  `C_l1`; purity identity guard passed; matched comparator constructed from the
+  model; unconditioned; `R` at `t_peak = τ + τc·ln(2 − e^{−τ/τc})` and at 2τ both
+  reported). Not claimed: environmental backflow; rung 2 for ensemble/platform
+  memories; finite-pulse behaviour. Status authority: this record. Dispatch
+  provenance: Claude Code (Sonnet) under the usage-based implementer protocol;
+  dispatched packet rev 1.2 SHA-256 `da8ca7f63a05b2bc…` (rev 1.1 `e1aa374677043 70e…`
+  superseded on the implementer's pre-code contradiction flag, which was the
+  correct stop-and-report behaviour under the execution-authority block).
+  Registered follow-ups: RECOH-2b (finite pulse duration and angle error,
+  measured against this baseline); RECOH-3 (intrinsic backflow, optional,
+  second-member gated); RECOH-4 (key-rate coupling).
 
 - **2026-09-05 (Rev 20, RECOH-2 active rephasing, Claude Code/Sonnet).** RECOH-2
   earns **rung 2, mechanism `ACTIVE_REPHASING`**, on the single-qubit
