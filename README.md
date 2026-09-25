@@ -210,6 +210,20 @@ MDI / twin-field QKD (beating the rate-distance limit via a central node), and
 continuous-variable QKD (homodyne detection rather than photon counting). These are
 **design targets the architecture accommodates, not implemented work.**
 
+## Experiments
+
+Studies that use the platform as a testbed live under `experiments/`. They sit
+above the physics wall (ADR-0002): they import the physics unchanged and cannot
+alter it.
+
+- [`experiments/ml4qt-2026/`](experiments/ml4qt-2026/) — **Is adapting worth
+  it?** First adaptive-link study, presented as a poster at the ML4QT 2026
+  Symposium (IQC, University of Waterloo, 24 September 2026). A learner
+  adjusting source intensity and block length did not beat a fixed setting, and
+  the reactive baseline collapsed at low count rates. Poster PDF, code, results,
+  caveats, and the four-stage research horizon are in the folder. SIMULATED,
+  PRELIMINARY; channel ILLUSTRATIVE.
+
 ## Workflow
 
 Set up the environment and install the package (dependencies are declared in
